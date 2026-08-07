@@ -422,17 +422,17 @@ npm run cheela:deploy:dry   # validate + generate, ship nothing
 npm run cheela:deploy       # publish the capability set
 
 # refresh the served discovery manifest after a deploy (run in client/)
-cd client && npx cheela manifest pull --runtime rt_efa20c332e6ff2350ee20cdbc7a144ea
+cd client && npx cheela manifest pull --runtime rt_23fc70839a4b02f45b91ae6c9794f8e1
 ```
 
 **Current deployment**
 
 ```
-Runtime        rt_efa20c332e6ff2350ee20cdbc7a144ea
-Deployment     9 — active
+Runtime        rt_23fc70839a4b02f45b91ae6c9794f8e1
+Deployment     7 — active
 Connection     online (Signed HTTPS)
 Provider       openrouter / openai/gpt-oss-20b:free
-Capabilities   14, in sync (4 require a signed-in shopper)
+Capabilities   15, in sync (5 require a signed-in shopper)
 Endpoint       https://<quick-tunnel>.trycloudflare.com/cheela/execute
 ```
 
