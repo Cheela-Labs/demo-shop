@@ -1,12 +1,16 @@
-# Cheela Shop
+# Cheela Shop — storefront
 
-A small but complete ecommerce site — React frontend, Express + SQLite backend. Nothing is
-mocked: the catalogue, cart, orders, sessions and **product images** all live in a real
-database, and payments go through Razorpay.
+A complete, working ecommerce site — React + Express + SQLite. Nothing is stubbed for show:
+the catalogue, cart, orders, sessions and even the **product images** live in a real
+database, and payments go through Razorpay with real signature verification.
 
-> This is the **`without-cheela`** branch — the storefront on its own. The `main` branch is
-> the same shop with the Cheela agent integration added on top, so
-> `git diff without-cheela..main` is exactly what integrating Cheela involves.
+> **This is the `without-cheela` branch — the shop on its own.**
+> `main` is the same storefront with the Cheela agent integration added, so
+> ```bash
+> git diff without-cheela..main
+> ```
+> is exactly what integrating Cheela involves. Nothing here depends on Cheela: this branch
+> has no agent runtime, no chat widget and no `@cheela/*` dependency.
 
 ## Quick start
 
@@ -32,7 +36,7 @@ npm start             # serve API + built SPA from Express alone, on :4000
 
 ## How the images work
 
-You asked for SVG art stored the way a real site stores it, so the pipeline is:
+Product art is stored the way a real site stores it:
 
 ```
 draw SVG (server/src/svg.js)
@@ -84,13 +88,13 @@ demo@cheela.shop  /  demo-password-1234
 ```
 
 It also gets a **fixed session token**, `demo-session-token-do-not-use-in-production`,
-because capability calls carry an end-user credential and a test needs one it can
-predict. That is only acceptable for a seeded demo — set `DEMO_ACCOUNT=off` to skip
-seeding it entirely.
+so tests have a credential they can predict. That is only acceptable for a seeded
+demo — set `DEMO_ACCOUNT=off` to skip seeding it entirely.
 
-Payments are simulated by `server/src/mock-payments.js`. There is no processor and
-no real card: the outcome is decided by an opaque method token, so every branch is
-reproducible.
+Payments go through **Razorpay** (see below). When it is unconfigured,
+`server/src/mock-payments.js` stands in so the shop and every test still work with
+no account: the outcome is decided by an opaque method token — never a card number
+— which keeps every branch reproducible.
 
 | Token | Test card | Outcome |
 | --- | --- | --- |
