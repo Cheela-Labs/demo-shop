@@ -6,9 +6,12 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "cheela:manifest": "cheela manifest pull --runtime ${CHEELA_RUNTIME_ID:?set CHEELA_RUNTIME_ID}"
   },
   "dependencies": {
+    "@cheela/cli": "^0.9.0",
+    "@cheela/ui": "^0.3.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.28.0"

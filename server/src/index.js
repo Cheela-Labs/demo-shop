@@ -5,12 +5,14 @@ import { fileURLToPath } from 'node:url';
 import cors from 'cors';
 import express from 'express';
 import morgan from 'morgan';
+import { createCheelaExpressHandler } from '@cheela/runtime';
 
 import { api } from './routes.js';
 import { webhooks } from './webhooks.js';
 import { seed } from './seed.js';
 import { DB_PATH, tableCount } from './db.js';
 import { isConfigured as razorpayConfigured, isSimulated as razorpaySimulated, webhooksConfigured } from './razorpay.js';
+import cheelaRuntime from '../.cheela/runtime.ts';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CLIENT_DIST = path.resolve(HERE, '..', '..', 'client', 'dist');
@@ -20,6 +22,29 @@ const app = express();
 
 app.disable('x-powered-by');
 app.use(cors());
+
+// Cheela capability endpoint. Mounted BEFORE express.json() and with a raw
+// body parser on purpose: the request signature is an HMAC over the exact
+// bytes received, and re-serialised JSON will not match them.
+const CHEELA_SECRET = process.env.CHEELA_RUNTIME_SECRET;
+
+app.post(
+  '/cheela/execute',
+  express.raw({ type: '*/*', limit: '256kb' }),
+  (req, res, next) => {
+    if (!CHEELA_SECRET) {
+      return res.status(503).json({
+        error: 'CHEELA_RUNTIME_SECRET is not set — capability calls cannot be verified.',
+      });
+    }
+    return next();
+  },
+  createCheelaExpressHandler({
+    runtime: cheelaRuntime,
+    secret: CHEELA_SECRET ?? '',
+    ...(process.env.CHEELA_RUNTIME_ID ? { runtimeId: process.env.CHEELA_RUNTIME_ID } : {}),
+  }),
+);
 
 // Razorpay webhooks, for the same reason as above: the signature is an HMAC
 // over the exact bytes received, so this must see the raw body.
@@ -33,7 +58,7 @@ app.use('/api', api);
 // Production: serve the built SPA and let client-side routing handle the rest.
 if (existsSync(CLIENT_DIST)) {
   app.use(express.static(CLIENT_DIST, { maxAge: '1h' }));
-  app.get(/^(?!\/api|\/webhooks).*/, (_req, res) => res.sendFile(path.join(CLIENT_DIST, 'index.html')));
+  app.get(/^(?!\/api|\/cheela|\/webhooks).*/, (_req, res) => res.sendFile(path.join(CLIENT_DIST, 'index.html')));
 }
 
 app.use((req, res) => res.status(404).json({ error: `No route for ${req.method} ${req.path}` }));
@@ -53,7 +78,12 @@ if (tableCount('products') === 0) {
 await seed();
 
 app.listen(PORT, () => {
+  const caps = cheelaRuntime.getCapabilities();
+  const gated = caps.filter((c) => c.requiresEndUser).length;
   console.log(`\n  API     http://localhost:${PORT}/api`);
+  console.log(`  Cheela  http://localhost:${PORT}/cheela/execute — ${caps.length} capabilities (${gated} need a signed-in shopper)`);
+  if (!CHEELA_SECRET) console.log('          ⚠ CHEELA_RUNTIME_SECRET unset — endpoint returns 503');
+  if (!process.env.CHEELA_ENDPOINT) console.log('          ⚠ CHEELA_ENDPOINT unset — Cheela cannot call back in (tunnel required)');
   if (razorpaySimulated()) {
     console.log(`  Payments Razorpay SANDBOX (${process.env.RAZORPAY_KEY_ID}) — INR`);
     console.log('          ↳ nothing is sent to Razorpay; signatures are still signed and verified for real');

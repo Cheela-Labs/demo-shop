@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { useShop } from '../store';
+import Assistant from './Assistant';
 import { Bag, Logo, Search, User } from './Icons';
 
 function Header() {
@@ -80,6 +81,7 @@ export default function Layout() {
         <div className="wrap"><Outlet /></div>
       </main>
       <Footer />
+      <Assistant />
       {toast && (
         <div className={`toast ${toast.tone === 'error' ? 'error' : ''}`} key={toast.key} role="status">
           {toast.message}

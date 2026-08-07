@@ -8,9 +8,16 @@
     "dev": "node --watch --env-file-if-exists=.env src/index.js",
     "start": "node --env-file-if-exists=.env src/index.js",
     "seed": "node src/seed.js",
-    "seed:force": "node src/seed.js --force"
+    "seed:force": "node src/seed.js --force",
+    "cheela:dev": "cheela dev",
+    "cheela:deploy": "cheela deploy",
+    "cheela:deploy:dry": "cheela deploy --dry-run",
+    "cheela:status": "cheela status"
   },
   "dependencies": {
+    "@cheela/protocol": "^0.3.0",
+    "@cheela/runtime": "^0.7.0",
+    "@cheela/sdk": "^0.7.0",
     "cors": "^2.8.5",
     "express": "^4.21.2",
     "morgan": "^1.10.0",
@@ -18,6 +25,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@cheela/cli": "^0.9.0",
     "@types/node": "^26.1.2",
     "typescript": "^7.0.2"
   }

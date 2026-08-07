@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2023"],
+    "types": ["node"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    // The storefront is plain JavaScript: resolve it so the `.cheela` files can
+    // import it, but do not type-check it — the typed facade in capabilities.ts
+    // is where that contract is stated.
+    "allowJs": true,
+    "checkJs": false,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    // Node strips types at runtime rather than compiling, so imports must
+    // carry the real ".ts" extension.
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true
+  },
+  "include": [".cheela/**/*.ts", "cheela.config.ts", "src/**/*.js"]
+}

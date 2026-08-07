@@ -1,0 +1,2244 @@
+{
+  "specVersion": "0.3.0",
+  "id": "com.example.cheelashop",
+  "name": "Cheela Shop",
+  "description": "A small storefront selling well-made everyday goods — audio, bags, footwear, home and tech.",
+  "provider": {
+    "name": "Cheela Shop",
+    "url": "https://compounds-coordination-jelsoft-xbox.trycloudflare.com"
+  },
+  "capabilities": [
+    {
+      "name": "com.example.cheelashop.addresses-list",
+      "invocationName": "addresses-list",
+      "version": "1.0.0",
+      "description": "List the shopper's saved delivery addresses. Requires a signed-in shopper. Call this before placing an order so you can offer their saved addresses instead of asking them to dictate one — pass the chosen addressId to checkout-place-order.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "addresses": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "addressId": {
+                  "type": "string",
+                  "description": "Pass this to checkout-place-order"
+                },
+                "label": {
+                  "type": "string",
+                  "description": "What the shopper calls it, e.g. \"Home\""
+                },
+                "recipient": {
+                  "type": "string"
+                },
+                "summary": {
+                  "type": "string",
+                  "description": "The address on one line, safe to read back"
+                },
+                "city": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string"
+                },
+                "postcode": {
+                  "type": "string"
+                },
+                "isDefault": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "addressId",
+                "label",
+                "recipient",
+                "summary",
+                "city",
+                "state",
+                "postcode",
+                "isDefault"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "addresses",
+          "total"
+        ],
+        "additionalProperties": false
+      },
+      "endpoint": {
+        "transport": "http",
+        "address": "https://api.cheelalabs.com/v1/capabilities/rt_23fc70839a4b02f45b91ae6c9794f8e1/addresses-list",
+        "auth": "none"
+      }
+    },
+    {
+      "name": "com.example.cheelashop.cart-add-item",
+      "invocationName": "cart-add-item",
+      "version": "1.1.0",
+      "description": "Add a product to the cart. Omit cartId to start a new cart — the id comes back in the result, and every later cart call needs it. Stock is enforced, so this fails if the requested quantity exceeds what is available.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "productId": {
+            "type": "string"
+          },
+          "quantity": {
+            "description": "Defaults to 1",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "cartId": {
+            "description": "Omit to create a new cart",
+            "type": "string"
+          }
+        },
+        "required": [
+          "productId"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "cartId": {
+            "type": "string"
+          },
+          "itemCount": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "itemId": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991,
+                  "description": "Use this to update or remove the line"
+                },
+                "productId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "unitPrice": {
+                  "type": "string"
+                },
+                "lineTotal": {
+                  "type": "string"
+                },
+                "lineTotalCents": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "itemId",
+                "productId",
+                "name",
+                "quantity",
+                "unitPrice",
+                "lineTotal",
+                "lineTotalCents"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "subtotal": {
+            "type": "string"
+          },
+          "shipping": {
+            "type": "string"
+          },
+          "tax": {
+            "type": "string"
+          },
+          "total": {
+            "type": "string"
+          },
+          "totalCents": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "freeShippingRemaining": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Spend this much more for free shipping; null once qualified"
+          },
+          "cartUrl": {
+            "type": "string"
+          },
+          "checkoutUrl": {
+            "type": "string"
+          },
+          "added": {
+            "type": "string",
+            "description": "Confirmation of what was added"
+          }
+        },
+        "required": [
+          "cartId",
+          "itemCount",
+          "items",
+          "subtotal",
+          "shipping",
+          "tax",
+          "total",
+          "totalCents",
+          "freeShippingRemaining",
+          "cartUrl",
+          "checkoutUrl",
+          "added"
+        ],
+        "additionalProperties": false
+      },
+      "endpoint": {
+        "transport": "http",
+        "address": "https://api.cheelalabs.com/v1/capabilities/rt_23fc70839a4b02f45b91ae6c9794f8e1/cart-add-item",
+        "auth": "none"
+      }
+    },
+    {
+      "name": "com.example.cheelashop.cart-clear",
+      "invocationName": "cart-clear",
+      "version": "1.1.0",
+      "description": "Empty the cart without placing an order.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "cartId": {
+            "description": "Omit for a signed-in shopper — their own cart is used",
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "cartId": {
+            "type": "string"
+          },
+          "itemCount": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "itemId": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991,
+                  "description": "Use this to update or remove the line"
+                },
+                "productId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "unitPrice": {
+                  "type": "string"
+                },
+                "lineTotal": {
+                  "type": "string"
+                },
+                "lineTotalCents": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "itemId",
+                "productId",
+                "name",
+                "quantity",
+                "unitPrice",
+                "lineTotal",
+                "lineTotalCents"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "subtotal": {
+            "type": "string"
+          },
+          "shipping": {
+            "type": "string"
+          },
+          "tax": {
+            "type": "string"
+          },
+          "total": {
+            "type": "string"
+          },
+          "totalCents": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "freeShippingRemaining": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Spend this much more for free shipping; null once qualified"
+          },
+          "cartUrl": {
+            "type": "string"
+          },
+          "checkoutUrl": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "cartId",
+          "itemCount",
+          "items",
+          "subtotal",
+          "shipping",
+          "tax",
+          "total",
+          "totalCents",
+          "freeShippingRemaining",
+          "cartUrl",
+          "checkoutUrl"
+        ],
+        "additionalProperties": false
+      },
+      "endpoint": {
+        "transport": "http",
+        "address": "https://api.cheelalabs.com/v1/capabilities/rt_23fc70839a4b02f45b91ae6c9794f8e1/cart-clear",
+        "auth": "none"
+      }
+    },
+    {
+      "name": "com.example.cheelashop.cart-remove-item",
+      "invocationName": "cart-remove-item",
+      "version": "1.1.0",
+      "description": "Remove a line from the cart entirely.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "cartId": {
+            "description": "Omit for a signed-in shopper — their own cart is used",
+            "type": "string"
+          },
+          "itemId": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "The itemId from a cart result"
+          }
+        },
+        "required": [
+          "itemId"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "cartId": {
+            "type": "string"
+          },
+          "itemCount": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "itemId": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991,
+                  "description": "Use this to update or remove the line"
+                },
+                "productId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "unitPrice": {
+                  "type": "string"
+                },
+                "lineTotal": {
+                  "type": "string"
+                },
+                "lineTotalCents": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "itemId",
+                "productId",
+                "name",
+                "quantity",
+                "unitPrice",
+                "lineTotal",
+                "lineTotalCents"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "subtotal": {
+            "type": "string"
+          },
+          "shipping": {
+            "type": "string"
+          },
+          "tax": {
+            "type": "string"
+          },
+          "total": {
+            "type": "string"
+          },
+          "totalCents": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "freeShippingRemaining": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Spend this much more for free shipping; null once qualified"
+          },
+          "cartUrl": {
+            "type": "string"
+          },
+          "checkoutUrl": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "cartId",
+          "itemCount",
+          "items",
+          "subtotal",
+          "shipping",
+          "tax",
+          "total",
+          "totalCents",
+          "freeShippingRemaining",
+          "cartUrl",
+          "checkoutUrl"
+        ],
+        "additionalProperties": false
+      },
+      "endpoint": {
+        "transport": "http",
+        "address": "https://api.cheelalabs.com/v1/capabilities/rt_23fc70839a4b02f45b91ae6c9794f8e1/cart-remove-item",
+        "auth": "none"
+      }
+    },
+    {
+      "name": "com.example.cheelashop.cart-update-item",
+      "invocationName": "cart-update-item",
+      "version": "1.1.0",
+      "description": "Change the quantity of a line already in the cart. Setting quantity to 0 removes it.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "cartId": {
+            "description": "Omit for a signed-in shopper — their own cart is used",
+            "type": "string"
+          },
+          "itemId": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "The itemId from a cart result, not the product id"
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "itemId",
+          "quantity"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "cartId": {
+            "type": "string"
+          },
+          "itemCount": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "itemId": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991,
+                  "description": "Use this to update or remove the line"
+                },
+                "productId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "unitPrice": {
+                  "type": "string"
+                },
+                "lineTotal": {
+                  "type": "string"
+                },
+                "lineTotalCents": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "itemId",
+                "productId",
+                "name",
+                "quantity",
+                "unitPrice",
+                "lineTotal",
+                "lineTotalCents"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "subtotal": {
+            "type": "string"
+          },
+          "shipping": {
+            "type": "string"
+          },
+          "tax": {
+            "type": "string"
+          },
+          "total": {
+            "type": "string"
+          },
+          "totalCents": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "freeShippingRemaining": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Spend this much more for free shipping; null once qualified"
+          },
+          "cartUrl": {
+            "type": "string"
+          },
+          "checkoutUrl": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "cartId",
+          "itemCount",
+          "items",
+          "subtotal",
+          "shipping",
+          "tax",
+          "total",
+          "totalCents",
+          "freeShippingRemaining",
+          "cartUrl",
+          "checkoutUrl"
+        ],
+        "additionalProperties": false
+      },
+      "endpoint": {
+        "transport": "http",
+        "address": "https://api.cheelalabs.com/v1/capabilities/rt_23fc70839a4b02f45b91ae6c9794f8e1/cart-update-item",
+        "auth": "none"
+      }
+    },
+    {
+      "name": "com.example.cheelashop.cart-view",
+      "invocationName": "cart-view",
+      "version": "1.1.0",
+      "description": "Show the current contents and totals of a cart.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "cartId": {
+            "description": "Omit for a signed-in shopper — their own cart is used automatically",
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "cartId": {
+            "type": "string"
+          },
+          "itemCount": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "itemId": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991,
+                  "description": "Use this to update or remove the line"
+                },
+                "productId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "unitPrice": {
+                  "type": "string"
+                },
+                "lineTotal": {
+                  "type": "string"
+                },
+                "lineTotalCents": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "itemId",
+                "productId",
+                "name",
+                "quantity",
+                "unitPrice",
+                "lineTotal",
+                "lineTotalCents"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "subtotal": {
+            "type": "string"
+          },
+          "shipping": {
+            "type": "string"
+          },
+          "tax": {
+            "type": "string"
+          },
+          "total": {
+            "type": "string"
+          },
+          "totalCents": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "freeShippingRemaining": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Spend this much more for free shipping; null once qualified"
+          },
+          "cartUrl": {
+            "type": "string"
+          },
+          "checkoutUrl": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "cartId",
+          "itemCount",
+          "items",
+          "subtotal",
+          "shipping",
+          "tax",
+          "total",
+          "totalCents",
+          "freeShippingRemaining",
+          "cartUrl",
+          "checkoutUrl"
+        ],
+        "additionalProperties": false
+      },
+      "endpoint": {
+        "transport": "http",
+        "address": "https://api.cheelalabs.com/v1/capabilities/rt_23fc70839a4b02f45b91ae6c9794f8e1/cart-view",
+        "auth": "none"
+      }
+    },
+    {
+      "name": "com.example.cheelashop.catalog-get-product",
+      "invocationName": "catalog-get-product",
+      "version": "1.1.0",
+      "description": "Full detail for one product: description, specifications, stock level and related items. Call this before adding something to the cart if the shopper asked about specifics.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "productId": {
+            "type": "string",
+            "description": "Product id, e.g. \"aurora-over-ear\""
+          }
+        },
+        "required": [
+          "productId"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "product": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "tagline": {
+                "type": "string"
+              },
+              "category": {
+                "type": "string"
+              },
+              "price": {
+                "type": "string",
+                "description": "Display price, e.g. \"₹14,999\""
+              },
+              "priceCents": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "compareAtPrice": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Original price when on sale"
+              },
+              "onSale": {
+                "type": "boolean"
+              },
+              "rating": {
+                "type": "number"
+              },
+              "reviews": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "inStock": {
+                "type": "boolean"
+              },
+              "stock": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "imageUrl": {
+                "type": "string"
+              },
+              "productUrl": {
+                "type": "string",
+                "description": "Storefront page for this product"
+              },
+              "description": {
+                "type": "string"
+              },
+              "specs": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "description": "Spec name to value"
+              },
+              "tags": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "tagline",
+              "category",
+              "price",
+              "priceCents",
+              "compareAtPrice",
+              "onSale",
+              "rating",
+              "reviews",
+              "inStock",
+              "stock",
+              "imageUrl",
+              "productUrl",
+              "description",
+              "specs",
+              "tags"
+            ],
+            "additionalProperties": false
+          },
+          "related": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "tagline": {
+                  "type": "string"
+                },
+                "category": {
+                  "type": "string"
+                },
+                "price": {
+                  "type": "string",
+                  "description": "Display price, e.g. \"₹14,999\""
+                },
+                "priceCents": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "compareAtPrice": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Original price when on sale"
+                },
+                "onSale": {
+                  "type": "boolean"
+                },
+                "rating": {
+                  "type": "number"
+                },
+                "reviews": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "inStock": {
+                  "type": "boolean"
+                },
+                "stock": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "imageUrl": {
+                  "type": "string"
+                },
+                "productUrl": {
+                  "type": "string",
+                  "description": "Storefront page for this product"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "tagline",
+                "category",
+                "price",
+                "priceCents",
+                "compareAtPrice",
+                "onSale",
+                "rating",
+                "reviews",
+                "inStock",
+                "stock",
+                "imageUrl",
+                "productUrl"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "product",
+          "related"
+        ],
+        "additionalProperties": false
+      },
+      "endpoint": {
+        "transport": "http",
+        "address": "https://api.cheelalabs.com/v1/capabilities/rt_23fc70839a4b02f45b91ae6c9794f8e1/catalog-get-product",
+        "auth": "none"
+      }
+    },
+    {
+      "name": "com.example.cheelashop.catalog-list-categories",
+      "invocationName": "catalog-list-categories",
+      "version": "1.1.0",
+      "description": "List every product category with how many products it holds.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "categories": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "count": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "categoryUrl": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "count",
+                "categoryUrl"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "categories"
+        ],
+        "additionalProperties": false
+      },
+      "endpoint": {
+        "transport": "http",
+        "address": "https://api.cheelalabs.com/v1/capabilities/rt_23fc70839a4b02f45b91ae6c9794f8e1/catalog-list-categories",
+        "auth": "none"
+      }
+    },
+    {
+      "name": "com.example.cheelashop.catalog-search-products",
+      "invocationName": "catalog-search-products",
+      "version": "1.1.0",
+      "description": "Search and filter the product catalogue. Use this for any question about what is for sale, what is available in a category, what is on sale, or what fits a budget.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "query": {
+            "description": "Free-text search over name, tagline, description and tags",
+            "type": "string"
+          },
+          "category": {
+            "description": "Restrict to one category",
+            "type": "string",
+            "enum": [
+              "Accessories",
+              "Audio",
+              "Bags",
+              "Footwear",
+              "Home",
+              "Outdoors",
+              "Tech"
+            ]
+          },
+          "sort": {
+            "description": "Result ordering; defaults to featured",
+            "type": "string",
+            "enum": [
+              "featured",
+              "price-asc",
+              "price-desc",
+              "rating",
+              "name"
+            ]
+          },
+          "minPriceCents": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "maxPriceCents": {
+            "description": "Budget ceiling, in cents",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "inStockOnly": {
+            "type": "boolean"
+          },
+          "limit": {
+            "description": "Defaults to 8",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 24
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "tagline": {
+                  "type": "string"
+                },
+                "category": {
+                  "type": "string"
+                },
+                "price": {
+                  "type": "string",
+                  "description": "Display price, e.g. \"₹14,999\""
+                },
+                "priceCents": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "compareAtPrice": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Original price when on sale"
+                },
+                "onSale": {
+                  "type": "boolean"
+                },
+                "rating": {
+                  "type": "number"
+                },
+                "reviews": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "inStock": {
+                  "type": "boolean"
+                },
+                "stock": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "imageUrl": {
+                  "type": "string"
+                },
+                "productUrl": {
+                  "type": "string",
+                  "description": "Storefront page for this product"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "tagline",
+                "category",
+                "price",
+                "priceCents",
+                "compareAtPrice",
+                "onSale",
+                "rating",
+                "reviews",
+                "inStock",
+                "stock",
+                "imageUrl",
+                "productUrl"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Total matches, not just this page"
+          },
+          "page": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "pages": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "pages"
+        ],
+        "additionalProperties": false
+      },
+      "endpoint": {
+        "transport": "http",
+        "address": "https://api.cheelalabs.com/v1/capabilities/rt_23fc70839a4b02f45b91ae6c9794f8e1/catalog-search-products",
+        "auth": "none"
+      }
+    },
+    {
+      "name": "com.example.cheelashop.checkout-pay-order",
+      "invocationName": "checkout-pay-order",
+      "version": "2.0.0",
+      "description": "Get a secure payment link for an order the shopper already placed. Requires a signed-in shopper, and only works on their own orders. Payment happens on Razorpay's own page — give the shopper the paymentUrl and ask them to open it. You cannot complete the payment yourself, and you must never ask for card, UPI or bank details. Check back with orders-get-order to see whether it went through.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orderNumber": {
+            "type": "string",
+            "description": "The order number, e.g. \"CHL-ESIRMIJV\""
+          },
+          "paymentMethod": {
+            "description": "Ignored — the shopper chooses how to pay on the Razorpay page.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "orderNumber"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orderNumber": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "description": "pending_payment | paid | payment_failed | cancelled"
+          },
+          "paid": {
+            "type": "boolean",
+            "description": "True only once payment has been captured"
+          },
+          "customer": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "productId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "unitPrice": {
+                  "type": "string"
+                },
+                "lineTotal": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "productId",
+                "name",
+                "quantity",
+                "unitPrice",
+                "lineTotal"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "subtotal": {
+            "type": "string"
+          },
+          "shipping": {
+            "type": "string"
+          },
+          "tax": {
+            "type": "string"
+          },
+          "total": {
+            "type": "string"
+          },
+          "totalCents": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "shippingAddress": {
+            "type": "string"
+          },
+          "placedAt": {
+            "type": "string"
+          },
+          "orderUrl": {
+            "type": "string"
+          },
+          "payment": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "description": "requires_payment | captured | failed"
+                  },
+                  "brand": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "last4": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "failureReason": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "status",
+                  "brand",
+                  "last4",
+                  "failureReason"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "declineReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the payment failed, when paid is false"
+          },
+          "paymentUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Give this to the shopper to open and pay. Null when payment is already settled."
+          },
+          "instruction": {
+            "type": "string",
+            "description": "What to tell the shopper next"
+          },
+          "cheela": {
+            "type": "object",
+            "properties": {
+              "actions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "link"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "url": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "style": {
+                      "type": "string",
+                      "enum": [
+                        "primary",
+                        "secondary"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "label",
+                    "url"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "actions"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "orderNumber",
+          "status",
+          "paid",
+          "customer",
+          "email",
+          "items",
+          "subtotal",
+          "shipping",
+          "tax",
+          "total",
+          "totalCents",
+          "shippingAddress",
+          "placedAt",
+          "orderUrl",
+          "payment",
+          "declineReason",
+          "paymentUrl",
+          "instruction"
+        ],
+        "additionalProperties": false
+      },
+      "endpoint": {
+        "transport": "http",
+        "address": "https://api.cheelalabs.com/v1/capabilities/rt_23fc70839a4b02f45b91ae6c9794f8e1/checkout-pay-order",
+        "auth": "none"
+      }
+    },
+    {
+      "name": "com.example.cheelashop.checkout-place-order",
+      "invocationName": "checkout-place-order",
+      "version": "3.0.0",
+      "description": "Place the order for a cart. Requires a signed-in shopper. This reserves stock and empties the cart, but does NOT take payment — the order comes back as pending_payment and you must then call checkout-pay-order. Confirm the items and the total with the shopper first, and never invent an address: ask for one.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "cartId": {
+            "description": "Omit to use the shopper's current cart",
+            "type": "string"
+          },
+          "addressId": {
+            "description": "A saved address from addresses-list. Prefer this — ask the shopper which saved address to use rather than collecting one field by field. When set, every address field below is ignored.",
+            "type": "string"
+          },
+          "addressLine1": {
+            "description": "Flat, house number, building, street",
+            "type": "string"
+          },
+          "addressLine2": {
+            "description": "Area or landmark",
+            "type": "string"
+          },
+          "city": {
+            "type": "string"
+          },
+          "state": {
+            "description": "Indian state or union territory",
+            "type": "string"
+          },
+          "postcode": {
+            "description": "6-digit PIN code",
+            "type": "string"
+          },
+          "phone": {
+            "description": "10-digit Indian mobile, for delivery updates",
+            "type": "string"
+          },
+          "country": {
+            "description": "Defaults to India",
+            "type": "string"
+          },
+          "name": {
+            "description": "Recipient name; defaults to the signed-in shopper's name",
+            "type": "string"
+          },
+          "email": {
+            "description": "Where the receipt goes; defaults to the signed-in shopper's email",
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orderNumber": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "description": "pending_payment | paid | payment_failed | cancelled"
+          },
+          "paid": {
+            "type": "boolean",
+            "description": "True only once payment has been captured"
+          },
+          "customer": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "productId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "unitPrice": {
+                  "type": "string"
+                },
+                "lineTotal": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "productId",
+                "name",
+                "quantity",
+                "unitPrice",
+                "lineTotal"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "subtotal": {
+            "type": "string"
+          },
+          "shipping": {
+            "type": "string"
+          },
+          "tax": {
+            "type": "string"
+          },
+          "total": {
+            "type": "string"
+          },
+          "totalCents": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "shippingAddress": {
+            "type": "string"
+          },
+          "placedAt": {
+            "type": "string"
+          },
+          "orderUrl": {
+            "type": "string"
+          },
+          "payment": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "description": "requires_payment | captured | failed"
+                  },
+                  "brand": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "last4": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "failureReason": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "status",
+                  "brand",
+                  "last4",
+                  "failureReason"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextStep": {
+            "type": "string",
+            "description": "What has to happen before the order is complete"
+          },
+          "cheela": {
+            "type": "object",
+            "properties": {
+              "actions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "link"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "url": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "style": {
+                      "type": "string",
+                      "enum": [
+                        "primary",
+                        "secondary"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "label",
+                    "url"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "actions"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "orderNumber",
+          "status",
+          "paid",
+          "customer",
+          "email",
+          "items",
+          "subtotal",
+          "shipping",
+          "tax",
+          "total",
+          "totalCents",
+          "shippingAddress",
+          "placedAt",
+          "orderUrl",
+          "payment",
+          "nextStep"
+        ],
+        "additionalProperties": false
+      },
+      "endpoint": {
+        "transport": "http",
+        "address": "https://api.cheelalabs.com/v1/capabilities/rt_23fc70839a4b02f45b91ae6c9794f8e1/checkout-place-order",
+        "auth": "none"
+      }
+    },
+    {
+      "name": "com.example.cheelashop.orders-get-order",
+      "invocationName": "orders-get-order",
+      "version": "2.0.0",
+      "description": "Look up one of the shopper's own orders by number, including its payment status. Requires a signed-in shopper.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orderNumber": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "orderNumber"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orderNumber": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "description": "pending_payment | paid | payment_failed | cancelled"
+          },
+          "paid": {
+            "type": "boolean",
+            "description": "True only once payment has been captured"
+          },
+          "customer": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "productId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "unitPrice": {
+                  "type": "string"
+                },
+                "lineTotal": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "productId",
+                "name",
+                "quantity",
+                "unitPrice",
+                "lineTotal"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "subtotal": {
+            "type": "string"
+          },
+          "shipping": {
+            "type": "string"
+          },
+          "tax": {
+            "type": "string"
+          },
+          "total": {
+            "type": "string"
+          },
+          "totalCents": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "shippingAddress": {
+            "type": "string"
+          },
+          "placedAt": {
+            "type": "string"
+          },
+          "orderUrl": {
+            "type": "string"
+          },
+          "payment": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "description": "requires_payment | captured | failed"
+                  },
+                  "brand": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "last4": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "failureReason": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "status",
+                  "brand",
+                  "last4",
+                  "failureReason"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "orderNumber",
+          "status",
+          "paid",
+          "customer",
+          "email",
+          "items",
+          "subtotal",
+          "shipping",
+          "tax",
+          "total",
+          "totalCents",
+          "shippingAddress",
+          "placedAt",
+          "orderUrl",
+          "payment"
+        ],
+        "additionalProperties": false
+      },
+      "endpoint": {
+        "transport": "http",
+        "address": "https://api.cheelalabs.com/v1/capabilities/rt_23fc70839a4b02f45b91ae6c9794f8e1/orders-get-order",
+        "auth": "none"
+      }
+    },
+    {
+      "name": "com.example.cheelashop.orders-list",
+      "invocationName": "orders-list",
+      "version": "1.0.0",
+      "description": "List the signed-in shopper's order history, newest first. Use this for \"where is my order\", \"what did I buy\" or \"did that payment go through\".",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "limit": {
+            "description": "Defaults to 10",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20
+          }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orders": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "orderNumber": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "description": "pending_payment | paid | payment_failed | cancelled"
+                },
+                "paid": {
+                  "type": "boolean",
+                  "description": "True only once payment has been captured"
+                },
+                "customer": {
+                  "type": "string"
+                },
+                "email": {
+                  "type": "string"
+                },
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "productId": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "quantity": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "unitPrice": {
+                        "type": "string"
+                      },
+                      "lineTotal": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "productId",
+                      "name",
+                      "quantity",
+                      "unitPrice",
+                      "lineTotal"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "subtotal": {
+                  "type": "string"
+                },
+                "shipping": {
+                  "type": "string"
+                },
+                "tax": {
+                  "type": "string"
+                },
+                "total": {
+                  "type": "string"
+                },
+                "totalCents": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "shippingAddress": {
+                  "type": "string"
+                },
+                "placedAt": {
+                  "type": "string"
+                },
+                "orderUrl": {
+                  "type": "string"
+                },
+                "payment": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "description": "requires_payment | captured | failed"
+                        },
+                        "brand": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "last4": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "failureReason": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "brand",
+                        "last4",
+                        "failureReason"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "orderNumber",
+                "status",
+                "paid",
+                "customer",
+                "email",
+                "items",
+                "subtotal",
+                "shipping",
+                "tax",
+                "total",
+                "totalCents",
+                "shippingAddress",
+                "placedAt",
+                "orderUrl",
+                "payment"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "orders",
+          "total"
+        ],
+        "additionalProperties": false
+      },
+      "endpoint": {
+        "transport": "http",
+        "address": "https://api.cheelalabs.com/v1/capabilities/rt_23fc70839a4b02f45b91ae6c9794f8e1/orders-list",
+        "auth": "none"
+      }
+    },
+    {
+      "name": "com.example.cheelashop.store-get-policies",
+      "invocationName": "store-get-policies",
+      "version": "1.1.0",
+      "description": "Shipping, tax, returns and guarantee terms. Use this to answer \"how much is shipping\", \"when will it arrive\" or \"can I return it\" rather than guessing.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "freeShippingThreshold": {
+            "type": "string"
+          },
+          "flatShipping": {
+            "type": "string"
+          },
+          "taxRate": {
+            "type": "string"
+          },
+          "delivery": {
+            "type": "string"
+          },
+          "returns": {
+            "type": "string"
+          },
+          "guarantee": {
+            "type": "string"
+          },
+          "payment": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "freeShippingThreshold",
+          "flatShipping",
+          "taxRate",
+          "delivery",
+          "returns",
+          "guarantee",
+          "payment"
+        ],
+        "additionalProperties": false
+      },
+      "endpoint": {
+        "transport": "http",
+        "address": "https://api.cheelalabs.com/v1/capabilities/rt_23fc70839a4b02f45b91ae6c9794f8e1/store-get-policies",
+        "auth": "none"
+      }
+    },
+    {
+      "name": "com.example.cheelashop.store-list-payment-methods",
+      "invocationName": "store-list-payment-methods",
+      "version": "1.0.0",
+      "description": "List the payment method tokens checkout-pay-order accepts. Call this before paying so you pass a valid token. This is a demo store: these are simulated methods, no real card is ever charged, and you must never ask the shopper for real card details.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "methods": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "token": {
+                  "type": "string"
+                },
+                "brand": {
+                  "type": "string"
+                },
+                "last4": {
+                  "type": "string"
+                },
+                "outcome": {
+                  "type": "string",
+                  "description": "succeed | fail"
+                },
+                "description": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "token",
+                "brand",
+                "last4",
+                "outcome",
+                "description"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "methods",
+          "note"
+        ],
+        "additionalProperties": false
+      },
+      "endpoint": {
+        "transport": "http",
+        "address": "https://api.cheelalabs.com/v1/capabilities/rt_23fc70839a4b02f45b91ae6c9794f8e1/store-list-payment-methods",
+        "auth": "none"
+      }
+    }
+  ],
+  "lastUpdated": "2026-08-07T08:46:22.757Z"
+}

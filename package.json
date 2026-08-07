@@ -15,9 +15,17 @@
     "start": "npm run start --workspace server",
     "smoke": "node scripts/smoke.mjs",
     "smoke:addresses": "node scripts/address-smoke.mjs",
+    "smoke:cheela": "node --env-file-if-exists=server/.env scripts/cheela-smoke.mjs",
+    "smoke:cart": "node --env-file-if-exists=server/.env scripts/shared-cart-smoke.mjs",
+    "smoke:actions": "node --env-file-if-exists=server/.env scripts/actions-smoke.mjs",
     "smoke:razorpay": "node --env-file-if-exists=server/.env scripts/razorpay-smoke.mjs",
     "smoke:sandbox": "node scripts/razorpay-sandbox.mjs",
-    "razorpay:drive": "node --env-file-if-exists=server/.env scripts/razorpay-drive.mjs"
+    "razorpay:drive": "node --env-file-if-exists=server/.env scripts/razorpay-drive.mjs",
+    "typecheck": "tsc --noEmit -p server/tsconfig.json",
+    "cheela:dev": "npm run cheela:dev --workspace server",
+    "cheela:deploy": "npm run cheela:deploy --workspace server",
+    "cheela:status": "npm run cheela:status --workspace server",
+    "cheela:deploy:dry": "npm run cheela:deploy:dry --workspace server"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"
