@@ -1,0 +1,16 @@
+node_modules/
+dist/
+*.log
+
+# Secrets and local config. `.env.example` files are committed; `.env` is not.
+.env
+.env.local
+!.env.example
+
+# Generated on first run: the database, including the rasterised product PNGs.
+server/data/
+
+# Left behind when switching from the branch that has the Cheela integration —
+# the runtime's generated artifacts are not tracked, so they would otherwise
+# make this branch look dirty for files it does not own.
+server/.cheela/

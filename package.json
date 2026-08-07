@@ -1,0 +1,28 @@
+{
+  "name": "cheela-shop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A small but complete ecommerce site (React + Express) with procedurally generated SVG product art.",
+  "workspaces": [
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,client -c blue,magenta \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:server": "npm run dev --workspace server",
+    "dev:client": "npm run dev --workspace client",
+    "build": "npm run build --workspace client",
+    "start": "npm run start --workspace server",
+    "smoke": "node scripts/smoke.mjs",
+    "smoke:addresses": "node scripts/address-smoke.mjs",
+    "smoke:razorpay": "node --env-file-if-exists=server/.env scripts/razorpay-smoke.mjs",
+    "smoke:sandbox": "node scripts/razorpay-sandbox.mjs",
+    "razorpay:drive": "node --env-file-if-exists=server/.env scripts/razorpay-drive.mjs"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
