@@ -56,10 +56,10 @@ RUN npm run build --workspace client
 # the artwork up to date and returns immediately.
 RUN node server/src/seed.js
 
-# Drops vite, esbuild and typescript. Note it does *not* drop @cheela/cli,
-# which is a plain dependency of the client workspace rather than a dev one —
-# harmless, since publishing a runtime needs the deploy key (`ch_sk_…`) and
-# that never reaches this image.
+# Drops vite, esbuild, typescript and @cheela/cli. The CLI is only ever run
+# from a developer machine — `cheela deploy`, `cheela manifest pull` — and
+# publishing anything needs the deploy key (`ch_sk_…`), which never reaches
+# this image.
 RUN npm prune --omit=dev
 
 
