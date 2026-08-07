@@ -14,9 +14,10 @@ shop usable by an agent?*
 > git diff without-cheela..main
 > ```
 > Setting aside the README, which each branch owns, that diff **is** the integration:
-> **18 files, +4,862 / −9**. Nine deleted lines — the rest is purely additive, which is the
-> point. Removing `server/.cheela/`, the `/cheela/execute` mount and `Assistant.jsx` leaves
-> the shop running exactly as before.
+> **19 files, +5,321 / −39**. Of those 39 deleted lines, 30 are `package-lock.json` churn
+> and 9 are storefront code — the rest is purely additive, which is the point. Removing
+> `server/.cheela/`, the `/cheela/execute` mount and `Assistant.jsx` leaves the shop
+> running exactly as before.
 >
 > ```bash
 > git diff without-cheela..main -- . ':(exclude)README.md'
@@ -187,6 +188,18 @@ resolved by **owner**: a signed-in shopper has one cart, shared by the tab and t
 A `cartId` the model repeats from an earlier turn is ignored; a *non-empty* cart handed over
 explicitly is adopted, which is the genuine "filled a bag as a guest, then signed in" case.
 
+### The chat panel is ours
+
+`Assistant.jsx` is this project's own React and CSS, not a drop-in widget. It runs on the
+headless half of `@cheela/web-component` — `getSession` owns the conversation, the HTTP
+client and the streaming; the panel, bubbles and composer are written here so the chat
+matches the storefront instead of a shadow root that its stylesheet cannot reach.
+
+Two things stay borrowed on purpose: `renderMarkdown`, which builds model prose as DOM nodes
+rather than a markup string, and `renderActions`, which drops any action URL that is not
+`https:` — the rule that keeps `javascript:` in a capability's output from becoming stored
+XSS on this domain. `INTEGRATION.md` §14 has the full reasoning.
+
 ---
 
 ## Layout
@@ -207,12 +220,12 @@ server/
     index.js         Express assembly + /cheela/execute
   .cheela/
     capabilities.ts  the 15 capabilities
-    runtime.ts       registers them
+    runtime.ts       registers them 
   cheela.config.ts   endpoint + ADP namespace
 client/
   src/
     pages/           Home, Catalog, Product, Cart, Checkout, Pay, Order, Login, Account
-    components/      Layout, ProductCard, AddressForm, Assistant (chat widget), Icons
+    components/      Layout, ProductCard, AddressForm, Assistant (chat panel), Icons
     store.jsx        cart + auth context
     api.js           fetch wrapper, INR formatting
   public/.well-known/agent-discovery.json   published manifest, served statically

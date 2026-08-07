@@ -1,6 +1,7 @@
 /**
- * Runs a capability result through the same extractor @cheela/ui uses, so we
- * see what the chat panel would actually render — not what we intended it to.
+ * Runs a capability result through the same extractor the chat panel uses —
+ * `renderActions` in @cheela/web-component calls exactly this — so we see what
+ * the panel would actually render, not what we intended it to.
  */
 import { extractActions, isSafeActionUrl, MAX_ACTIONS_PER_RESULT } from '@cheela/protocol';
 import runtime from '../server/.cheela/runtime.ts';

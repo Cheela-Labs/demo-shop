@@ -320,11 +320,17 @@ input.input:focus, select.select:focus, textarea.input:focus {
   display: flex; align-items: center; justify-content: space-between;
   padding: 13px 16px; border-bottom: 1px solid var(--line); flex: none;
 }
-.assistant-panel header button {
+.assistant-actions { display: flex; align-items: center; gap: 10px; }
+.assistant-clear {
+  border: 0; background: none; cursor: pointer; padding: 2px 0;
+  font-size: 12.5px; font-weight: 600; color: var(--muted);
+}
+.assistant-clear:hover { color: var(--ink); text-decoration: underline; }
+.assistant-close {
   border: 0; background: none; cursor: pointer; font-size: 22px;
   line-height: 1; color: var(--muted); padding: 0 4px;
 }
-.assistant-panel header button:hover { color: var(--ink); }
+.assistant-close:hover { color: var(--ink); }
 .assistant-note {
   margin: 0; padding: 9px 16px; font-size: 12.5px; color: #92400e;
   background: #fffbeb; border-bottom: 1px solid #fde68a; flex: none;
@@ -337,8 +343,109 @@ input.input:focus, select.select:focus, textarea.input:focus {
   display: block; margin-top: 4px; font-weight: 400; font-size: 11.5px;
   color: #7f1d1d; opacity: 0.85; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
-.assistant-body { flex: 1; min-height: 0; overflow: hidden; display: flex; }
-.assistant-body > * { flex: 1; min-height: 0; }
+.assistant-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+
+/* --- the chat itself: ours now, so it is styled here rather than shipped --- */
+
+.chat-log {
+  flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+  padding: 14px 16px; display: flex; flex-direction: column; gap: 10px;
+}
+.chat-empty { margin: auto 0; text-align: center; font-size: 13.5px; color: var(--muted); }
+
+.chat-msg {
+  max-width: 85%; padding: 9px 13px; border-radius: 14px;
+  font-size: 14.5px; line-height: 1.5; overflow-wrap: anywhere;
+}
+.chat-msg--user { align-self: flex-end; background: var(--brand); color: #fff; border-bottom-right-radius: 5px; }
+.chat-msg--assistant, .chat-msg--tool {
+  align-self: flex-start; background: #f3f3f8; border-bottom-left-radius: 5px;
+}
+/* A tool message reaches the log only when it carries action buttons — there
+   is no bubble to draw around them. */
+.chat-msg--tool { background: none; padding: 0; max-width: 100%; }
+
+.chat-msg > :first-child { margin-top: 0; }
+.chat-msg > :last-child { margin-bottom: 0; }
+.chat-msg p { margin: 0 0 8px; }
+.chat-msg ul, .chat-msg ol { margin: 0 0 8px; padding-left: 20px; }
+.chat-msg li { margin-bottom: 3px; }
+.chat-msg h1, .chat-msg h2, .chat-msg h3 { font-size: 15px; margin: 0 0 6px; }
+/* Prose links only. Action buttons are anchors too, and they live inside a
+   bubble, so an unqualified `.chat-msg a` would out-specify their own styling
+   below and leave the pay button underlined and the wrong colour. */
+.chat-msg a:not(.cheela-chat__action) { text-decoration: underline; }
+.chat-msg--assistant a:not(.cheela-chat__action) { color: var(--brand); }
+.chat-msg code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.88em;
+  background: rgba(20, 20, 43, 0.07); padding: 1px 5px; border-radius: 5px;
+}
+.chat-msg--user code { background: rgba(255, 255, 255, 0.22); }
+.chat-msg pre {
+  margin: 0 0 8px; padding: 10px; border-radius: 8px; overflow-x: auto;
+  background: rgba(20, 20, 43, 0.07);
+}
+.chat-msg pre code { background: none; padding: 0; }
+.chat-msg blockquote {
+  margin: 0 0 8px; padding-left: 10px; border-left: 2px solid var(--line); color: var(--muted);
+}
+.chat-msg table { border-collapse: collapse; font-size: 13px; margin: 0 0 8px; }
+.chat-msg th, .chat-msg td { border: 1px solid var(--line); padding: 4px 8px; text-align: left; }
+.chat-msg hr { border: 0; border-top: 1px solid var(--line); margin: 8px 0; }
+.chat-msg img { border-radius: 8px; margin: 2px 0; }
+
+/* Action buttons.
+   These class names come from `renderActions` in @cheela/web-component, which
+   builds the buttons so the https-only rule is enforced in one tested place —
+   see Assistant.jsx. The markup is theirs; the look is the shop's. */
+.cheela-chat__actions { display: flex; flex-direction: column; gap: 7px; margin-top: 9px; }
+.chat-msg--tool .cheela-chat__actions { margin-top: 0; }
+.cheela-chat__action {
+  display: block; padding: 10px 14px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+  transition: background 0.15s, border-color 0.15s, transform 0.05s;
+}
+.cheela-chat__action:hover { background: #f7f7fb; border-color: #d5d5e4; }
+.cheela-chat__action:active { transform: translateY(1px); }
+.cheela-chat__action--primary {
+  background: var(--brand); border-color: var(--brand); color: #fff;
+}
+.cheela-chat__action--primary:hover { background: var(--brand-dark); border-color: var(--brand-dark); }
+.cheela-chat__action-label { display: block; font-weight: 600; font-size: 14px; }
+.cheela-chat__action-description {
+  display: block; margin-top: 2px; font-size: 12px; opacity: 0.75;
+}
+
+.chat-thinking { display: flex; gap: 4px; align-items: center; padding: 13px; }
+.chat-thinking span {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--muted);
+  animation: blink 1.3s ease-in-out infinite;
+}
+.chat-thinking span:nth-child(2) { animation-delay: 0.18s; }
+.chat-thinking span:nth-child(3) { animation-delay: 0.36s; }
+@keyframes blink { 0%, 60%, 100% { opacity: 0.25; } 30% { opacity: 1; } }
+
+.chat-composer {
+  flex: none; display: flex; gap: 8px; padding: 11px 12px;
+  border-top: 1px solid var(--line); background: var(--surface);
+}
+.chat-composer input {
+  flex: 1; min-width: 0; padding: 9px 13px; font-size: 14.5px;
+  border: 1px solid var(--line); border-radius: 999px; background: var(--bg);
+}
+.chat-composer input:focus { outline: 2px solid var(--brand); outline-offset: -1px; }
+.chat-composer input:disabled { opacity: 0.6; }
+.chat-composer button {
+  flex: none; padding: 9px 16px; border: 0; border-radius: 999px; cursor: pointer;
+  background: var(--ink); color: #fff; font-size: 14px; font-weight: 600;
+  transition: background 0.15s;
+}
+.chat-composer button:hover:not(:disabled) { background: #000; }
+.chat-composer button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-thinking span { animation: none; opacity: 0.5; }
+}
 
 @media (max-width: 700px) {
   .assistant-panel { right: 12px; left: 12px; width: auto; bottom: 74px; }

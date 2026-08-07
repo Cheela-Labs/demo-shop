@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@cheela/cli": "^0.9.0",
-    "@cheela/ui": "^0.3.0",
+    "@cheela/web-component": "^0.3.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.28.0"

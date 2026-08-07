@@ -37,7 +37,7 @@ why there is an HMAC secret, and why the raw request body matters.
 ```mermaid
 sequenceDiagram
     participant U as Shopper (browser)
-    participant W as Assistant.jsx<br/>@cheela/ui
+    participant W as Assistant.jsx<br/>@cheela/web-component
     participant C as Cheela cloud<br/>(openrouter / gpt-oss-20b)
     participant E as Express :4000<br/>/cheela/execute
     participant R as Runtime<br/>.cheela/runtime.ts
@@ -224,7 +224,7 @@ throws at startup.
 | **`server/.cheela/runtime.ts`** (25) | Creates the `Runtime`, grants the `cart:write` / `orders:write` permissions, and registers every capability. This is the file the CLI loads to discover what to deploy. |
 | **`server/cheela.config.ts`** (34) | Deploy config: API key (from env), ADP namespace, website metadata, and a conditionally-set endpoint. Scaffolded by `cheela init` — the 0.7 template still omits `provider`/`model`, which live on the dashboard. |
 | **`server/tsconfig.json`** (24) | The `.cheela` files are TypeScript. Node strips types natively at runtime, so this exists purely so the IDE and `npm run typecheck` agree. Needs `allowImportingTsExtensions` because Node requires the real `.ts` extension on imports, and `checkJs: false` so the plain-JS storefront resolves without being type-checked. |
-| **`client/src/components/Assistant.jsx`** (204) | The shopper-facing chat panel — `<CheelaProvider>` + `<Chat/>` from `@cheela/ui` behind a floating launcher. Passes `endUserToken` as a function so a later sign-in is picked up. Renders **only** if `VITE_CHEELA_PUBLIC_KEY` is set. Replies stream in and render as markdown (`@cheela/ui` 0.2.0). |
+| **`client/src/components/Assistant.jsx`** (457) | The shopper-facing chat panel, behind a floating launcher. The transcript, composer and status are this project's own React and CSS; the conversation underneath them is `getSession` from `@cheela/web-component/headless`, and message bodies are built by that package's `renderMarkdown` / `renderActions` — see §14. Passes `endUserToken` as a function so a later sign-in is picked up. Renders **only** if `VITE_CHEELA_PUBLIC_KEY` is set. Replies stream in token by token. |
 | **`client/public/.well-known/agent-discovery.json`** (2063) | The published manifest, fetched by `cheela manifest pull`. Served as a static asset so external agents can discover the store. Committed, because a static host will not run the CLI. |
 | **`scripts/cheela-smoke.mjs`** (187) | 39-check test driving the capabilities as an agent would, including the auth boundary (no token, bad token, another shopper's order) and the full pay/decline/retry cycle. Runs the runtime in-process — no server, no API key — yet proves every schema, because `execute()` validates both directions. |
 | **`server/src/razorpay.js`** | The gateway: Orders, Payment Links, `fetchPayment`, and the two signature verifications. Talks to Razorpay over `fetch` rather than the SDK so the HMAC arithmetic — the part that decides whether money moved — is visible here rather than buried in a dependency. Also holds sandbox mode. |
@@ -252,7 +252,7 @@ throws at startup.
 | **`client/src/pages/Checkout.jsx`** | Split into place-then-pay, with a `PaymentStep` card form. |
 | **`client/src/api.js`** | `pay()` / `paymentMethods()`, and `allowStatuses` so a 402 decline resolves rather than throws. |
 | **`client/src/components/Layout.jsx`** | Renders `<Assistant />` on every page. |
-| **`client/src/styles.css`** | The `.assistant-launcher` / `.assistant-panel` block. |
+| **`client/src/styles.css`** | The `.assistant-launcher` / `.assistant-panel` block, and the `.chat-*` block under it — transcript, bubbles, markdown, composer and the action buttons. That second half used to be a stylesheet shipped by `@cheela/ui`; §14 covers why it is written out here now. |
 | **`.gitignore`** | Root ignores `.env` and explicitly **un-ignores** `.env.example`; `server/.gitignore` (from `cheela init`) covers the CLI's generated output and cache. |
 | **`package.json`** (root + workspaces) | Scripts for dev/deploy/status/manifest/typecheck, and `--env-file-if-exists=.env` on the server scripts. |
 
@@ -368,8 +368,9 @@ which are in force — currently openrouter / `openai/gpt-oss-20b:free`.
 ### What the 0.7 build changed here
 
 Current versions: `@cheela/cli@0.9.0`, `@cheela/{runtime,sdk}@0.7.0`,
-`@cheela/ui@0.2.0`, `@cheela/client@0.4.0` (see §12 for what the UI side
-brought). Three things mattered on the 0.7 core:
+`@cheela/web-component@0.3.0`, `@cheela/client@0.5.0` (see §12 for what the
+browser side brought, and §14 for why the widget package is the web-component
+one rather than `@cheela/ui`). Three things mattered on the 0.7 core:
 
 **1. `createCapability` is generic, and it is the reason this file shrank in
 concept if not in lines.** In 0.6 it returned `Capability<unknown, unknown>`, so
@@ -493,10 +494,18 @@ shopper" in prose, and descriptions *are* published.
 *"Could not reach the Cheela API. Check the network connection and baseUrl."* —
 even though the API is reachable, CORS is correct, and the key is valid.
 
-**Still present on 0.4.0**, the version `@cheela/ui@0.2.0` pins. Re-checked at
-that release: the constructor is byte-for-byte the same as 0.2.0's, and
-`CheelaProviderProps` still exposes no `fetchImpl` prop, so there is still
-nowhere to inject a bound copy. Re-check on the next `@cheela/ui`.
+**Still present on 0.5.0**, the version `@cheela/web-component@0.3.0` pins
+*exactly* — so replacing `@cheela/ui` (§14) did not replace the bug. Re-checked
+at that release: the constructor is byte-for-byte the same as 0.2.0's, and the
+new entry point does not help, because `createChatController` builds the client
+itself —
+
+```js
+new ExecutionClient({ apiKey, baseUrl, ...(cfg.endUserToken ? { endUserToken: cfg.endUserToken } : {}) })
+```
+
+— and `ControllerConfig` has no `fetchImpl` field to pass through. There is
+still nowhere to inject a bound copy. Re-check on the next release.
 
 **Cause.** `@cheela/client@0.2.0` stores the global fetch on its instance and
 then calls it as a method:
@@ -517,16 +526,15 @@ The client catches everything around that call and rethrows it as
 never involved. It fails for every message, in every browser, whatever the
 configuration.
 
-**Fix here.** `CheelaProvider` exposes no `fetchImpl` prop, so there is nowhere
-to inject a bound copy. `Assistant.jsx` binds the global once at module load.
-This is semantically inert — `fetch` is specified to work with any receiver — and
-should be removed once upstream binds its own reference.
+**Fix here.** With no seam to inject through, `Assistant.jsx` binds the global
+once at module load. This is semantically inert — `fetch` is specified to work
+with any receiver — and should be removed once upstream binds its own reference.
 
 The same wrapper rescues a second silent failure: when the platform cannot
 invoke a capability it answers **HTTP 200** with `{ status: "failed", error }`.
 Nothing throws, the reply carries no assistant text, and the shopper is left
 looking at their own message. The wrapper turns that into a rejection so the
-existing `onError` path can explain it.
+panel's error path can explain it.
 
 **Verify the transport independently of the widget:**
 
@@ -558,18 +566,20 @@ rather than filling in word by word.
 
 **Fix.** Streaming arrived in `@cheela/client@0.3.0` via `executeStream()`, and —
 the part that matters — its `ConversationStore.sendMessage` consumes it
-internally, pushing a state update per token. `ConversationStore` is exactly what
-`@cheela/ui` drives, and its public API has not changed since 0.2.0, so a newer
-client makes the widget stream with **no UI code change**.
+internally, pushing a state update per token. `ConversationStore` is what every
+embedding surface drives, `@cheela/web-component`'s controller included, and its
+public API has not changed since 0.2.0, so a newer client streams with **no UI
+code change**.
 
-**`@cheela/ui@0.2.0` now depends on `@cheela/client@0.4.0` directly, so nothing
-special is needed — just install it.** An earlier revision of this project forced
-the newer client under `ui@0.1.1` with a root `overrides` entry; that is gone,
-and should not be reintroduced. If you ever do need it again, note that npm only
-honours `overrides` in the **workspace root**, a stale `node_modules` ignores the
-change entirely (only `rm -rf node_modules package-lock.json && npm install`
-applies it), and it never appears in `package-lock.json` — so confirm with the
-installed version rather than the lockfile:
+**`@cheela/web-component@0.3.0` depends on `@cheela/client@0.5.0` directly, so
+nothing special is needed — just install it.** An earlier revision of this
+project forced a newer client under an older widget package with a root
+`overrides` entry; that is gone, and should not be reintroduced. If you ever do
+need it again, note that npm only honours `overrides` in the **workspace root**,
+a stale `node_modules` ignores the change entirely (only
+`rm -rf node_modules package-lock.json && npm install` applies it), and it never
+appears in `package-lock.json` — so confirm with the installed version rather
+than the lockfile:
 
 ```bash
 node -p "require('./node_modules/@cheela/client/package.json').version"
@@ -589,9 +599,22 @@ now returns immediately for `text/event-stream`.
 **One consequence to be aware of.** That silent-failure guard therefore no
 longer covers the streaming path, and `ConversationStore.sendMessage` ignores
 `result.status` on the `done` event. So a platform-side failure — the 408 in §13,
-for instance — again surfaces as an empty assistant turn rather than an error in
-the panel. The `capability_end` event carries an `error` field, which is where a
-proper fix would read it from.
+for instance — reaches the panel as an ordinary, successful-looking turn.
+
+`Assistant.jsx` now catches **half** of that from the outside. When a turn
+settles back to `idle` and the transcript still ends on the shopper's own
+message, there was no reply at all, and the panel says so instead of leaving the
+message sitting there. Be clear about the half it does not catch: if the model
+emitted any prose before the capability failed, the turn ends on an assistant
+message and the guard stays quiet. That is not hypothetical — it is what a dead
+tunnel looks like here, a cheerful *"Let me search for wireless headphones under
+₹20,000 for you."* and then nothing, with no error anywhere in the panel or the
+console.
+
+Fixing the other half needs the `error` field on the `capability_end` event, and
+`ConversationStore` neither exposes it nor surfaces `result.status`. A panel that
+wanted it would have to drive `ExecutionClient.executeStream()` directly and keep
+its own transcript — which is the trade §14 declined to make.
 
 ---
 
@@ -637,3 +660,79 @@ failure says anything about the runtime.
 `CHEELA_RUNTIME_SECRET` matters just as much: without it `/cheela/execute` answers
 503 rather than trusting unsigned requests, so Cheela would reach the server and
 still be turned away.
+
+---
+
+## 14. The chat panel is this project's own
+
+The panel used to be `<CheelaProvider>` + `<Chat/>` from `@cheela/ui`, plus that
+package's stylesheet. It is now this project's own React and CSS, built on
+`@cheela/web-component`. Nothing about the integration changed — same public key,
+same `endUserToken`, same capabilities, same wire format. Only the browser-side
+rendering moved.
+
+### Why not the drop-in element
+
+`@cheela/web-component` ships `<cheela-chat api-key="…">`, which is genuinely one
+line. It renders into an **open shadow root** so the host page's CSS cannot reach
+in — exactly right when you are embedding into a site you do not control, and
+exactly wrong here, where the widget *is* the site and has to match a storefront
+that already has a type scale, a radius and a brand colour. Custom properties
+pierce the boundary, but only for the values the package chose to expose; the
+bubble layout, the composer and the empty state are not among them.
+
+### What is borrowed and what is written here
+
+The package's real seam for this is its `/headless` entry point, described in its
+own source as "the piece to reach for when you have your own design system":
+
+```js
+import { DEFAULT_SESSION, getSession, renderMarkdown, renderActions }
+  from '@cheela/web-component/headless';
+```
+
+| Borrowed | Written here |
+| --- | --- |
+| `getSession` — the conversation: HTTP client, transcript, request lifecycle, streaming | The panel, launcher, transcript layout, bubbles, composer, empty state, thinking indicator, error banner |
+| `renderMarkdown` — model prose → DOM | Every `.chat-*` rule in `styles.css` |
+| `renderActions` — capability actions → buttons | The stall guard (§12), the `explain()` error mapping, the per-turn cart refresh |
+
+The split is not arbitrary. The two borrowed renderers are the ones where a
+mistake is a security bug rather than a cosmetic one, and both are inside the
+blast radius of content this shop does not author:
+
+- `renderMarkdown` walks the parsed tree building DOM nodes, so no markup string
+  is ever assembled — there is no `innerHTML` in the transcript and no sanitiser
+  to keep ahead of.
+- `renderActions` drops any action URL that is not `https:`. That is what stops
+  `javascript:` in a capability's output from becoming stored XSS on this domain
+  against this shop's own customers. `scripts/actions-smoke.mjs` asserts it from
+  the runtime side; the panel gets the same rule for free by not re-deriving it.
+
+Both hand back detached DOM rather than React elements, so `Bubble` attaches them
+in an effect. They are rebuilt on every run rather than memoised: a
+`DocumentFragment` is emptied by the insertion, so re-using a previous one would
+blank the message — which is precisely what StrictMode's second effect pass would
+otherwise do.
+
+### Two things worth knowing about the controller
+
+**`getSession`, not `createChatController`.** `getSession` keys the controller by
+name at module scope, so the conversation outlives the component — including
+StrictMode's deliberate mount/unmount/remount in development. Nothing calls
+`destroySession`: `destroy()` detaches the controller from its store permanently,
+so a remount would find a session that never updates again.
+
+**`useSyncExternalStore` fits with no adapter.** `subscribe`/`getState` are
+already the shape React wants, and `getState` returns the stored object rather
+than a fresh one, so snapshots compare by identity and the panel re-renders only
+when the conversation actually changes.
+
+### What this costs
+
+One dependency swapped, not added: `@cheela/ui` out, `@cheela/web-component` in,
+and `@cheela/client@0.5.0` still underneath both. The panel grew from 204 lines
+to 457, and `styles.css` by 111 lines — the CSS that used to arrive as
+`@cheela/ui/style.css`. In exchange the chat matches the shop, and the two
+failure modes in §11 and §12 are handled where they are visible to a shopper
+rather than where the library happened to leave them.
