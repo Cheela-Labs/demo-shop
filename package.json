@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "license": "MIT",
+  "author": "Cheela Labs",
   "description": "A small but complete ecommerce site (React + Express) with procedurally generated SVG product art.",
   "workspaces": [
     "server",
