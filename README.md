@@ -13,9 +13,14 @@ shop usable by an agent?*
 > ```bash
 > git diff without-cheela..main
 > ```
-> That diff **is** the integration — 19 files, +4,992 / −16. The 16 deletions are this README.
-> Everything else is additive, which is the point: removing `server/.cheela/`, the
-> `/cheela/execute` mount and `Assistant.jsx` leaves the shop running exactly as before.
+> Setting aside the README, which each branch owns, that diff **is** the integration:
+> **18 files, +4,862 / −9**. Nine deleted lines — the rest is purely additive, which is the
+> point. Removing `server/.cheela/`, the `/cheela/execute` mount and `Assistant.jsx` leaves
+> the shop running exactly as before.
+>
+> ```bash
+> git diff without-cheela..main -- . ':(exclude)README.md'
+> ```
 
 ---
 
