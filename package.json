@@ -2,6 +2,7 @@
   "name": "cheela-shop",
   "version": "1.0.0",
   "private": true,
+  "license": "MIT",
   "description": "A small but complete ecommerce site (React + Express) with procedurally generated SVG product art.",
   "workspaces": [
     "server",
