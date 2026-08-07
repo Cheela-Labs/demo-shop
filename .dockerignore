@@ -1,0 +1,23 @@
+# Keep the build context small, and keep secrets out of image layers.
+
+.git
+.gitignore
+.claude
+
+# Reinstalled inside the image for the right platform — a host copy would be
+# both stale and, if built on ARM, the wrong sharp binary.
+node_modules
+**/node_modules
+
+# Rebuilt by the image. Copying a local build in would also let a stale bundle
+# — one compiled against a different VITE_CHEELA_PUBLIC_KEY — survive.
+client/dist
+
+# The local SQLite database. The image seeds its own; this one carries whatever
+# orders and accounts happened to exist on a developer machine.
+server/data
+
+# Real secrets: the Cheela deploy key and the Razorpay secrets. These must
+# arrive from Secret Manager at runtime, never from an image layer. The
+# committed .env.example files are not matched by this pattern.
+**/.env
