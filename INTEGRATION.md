@@ -1,8 +1,8 @@
 # Integration guide — how this project fits together
 
-Every file that exists here, where it lives, and why. Written to explain the
-**Cheela integration flow** end to end, with the storefront underneath it
-described in enough detail that the integration makes sense.
+How this project fits together: every file, where it lives, and why. Written to
+explain the **Cheela integration flow** end to end, with enough of the storefront
+underneath it that the integration makes sense.
 
 Two independent things are going on:
 
@@ -148,84 +148,98 @@ Three properties, each covered by a test in `cheela-smoke.mjs`:
 
 ---
 
-## 5. The mock payment flow
+## 5. The payment flow
 
-There is no processor. `server/src/mock-payments.js` decides the outcome from an
-opaque method token, so every branch — success, decline, insufficient funds, expiry
-— is reproducible in a test rather than something you can only hit by luck against
-a sandbox.
+Payments go through **Razorpay**. An order and its payment are separate objects,
+and the shop can settle one two independent ways.
 
 ```mermaid
 stateDiagram-v2
     [*] --> pending_payment: POST /api/orders<br/>stock reserved, cart emptied
-    pending_payment --> paid: charge succeeds<br/>payment captured
-    pending_payment --> payment_failed: issuer declines<br/>stock released
-    payment_failed --> paid: retry with another method
-    pending_payment --> pending_payment: unknown token → 400<br/>order untouched
+    pending_payment --> paid: browser callback<br/>signature verified
+    pending_payment --> paid: webhook payment.captured<br/>(authoritative)
+    pending_payment --> payment_failed: payment.failed<br/>stock released
+    payment_failed --> paid: retry
 ```
 
 **Why an order and its payment are separate.** Placing reserves stock; paying
 settles it. Reserving at placement stops two shoppers both checking out the last
-unit and then racing at the card step. Releasing on decline stops a dead order
+unit and then racing at the card step. Releasing on failure stops a dead order
 holding inventory hostage.
 
-**Why an unknown token is a 400, not a decline.** A token the processor does not
-recognise is a caller typo, not an issuer decision. Treating it as a decline would
-mark the order failed and release its stock over a spelling mistake, so it throws
-and leaves the order exactly as it was.
+**Why both a callback and a webhook.** The browser callback carries
+`razorpay_payment_id`, `razorpay_order_id` and `razorpay_signature` — but it
+arrives through the shopper's own browser, so those values are attacker-supplied
+until the HMAC over `order_id|payment_id` checks out. And a shopper who pays and
+then closes the tab never runs the callback at all; their money has still moved.
+The webhook is the only path that completes those orders, which makes it
+authoritative rather than a backup. Both funnel into the same idempotent
+`settleRazorpayPayment`, so whichever lands first wins and the second is a no-op.
 
-**Why tokens rather than card numbers.** `checkout-pay-order` accepts
-`pm_card_visa`, never a PAN. That mirrors real integrations — the card goes from
-browser to processor and never touches your server — and it matters more here,
-because the alternative is a card number passing through a language model. The
-browser form maps well-known test numbers onto the same tokens server-side, so the
-UI and the agent exercise one code path.
+**Amounts are re-checked on both paths.** A verified signature proves *who* sent
+the message, not *how much* was paid — an underpayment is still an underpayment,
+so the amount is compared against the order total before anything is marked paid.
 
-| Token | Test card | Outcome |
-| --- | --- | --- |
-| `pm_card_visa` | 4242 4242 4242 4242 | Succeeds |
-| `pm_card_mastercard` | 5555 5555 5555 4444 | Succeeds |
-| `pm_card_declined` | 4000 0000 0000 0002 | `card_declined` |
-| `pm_card_insufficient_funds` | 4000 0000 0000 9995 | `insufficient_funds` |
-| `pm_card_expired` | 4000 0000 0000 0069 | `expired_card` |
+**Why the webhook is mounted on the raw body.** Its signature is an HMAC over the
+exact bytes Razorpay sent. `express.json()` consumes the stream, and
+re-serialising the parsed object yields different bytes, so every signature would
+fail. Same reason as `/cheela/execute`.
 
-A decline is a **normal result**, not a thrown error: `paid: false` with a
-`declineReason`, so the model explains it and offers a retry instead of reporting a
-failed tool call.
+### The simulated processor
 
-### The demo account
+`server/src/mock-payments.js` still exists and takes over whenever Razorpay is
+unconfigured, so a clean clone checks out and every test passes with no account.
+The outcome is decided by an opaque method token — never a card number — which
+keeps success, decline, insufficient funds and expiry reproducible.
 
-```
-demo@cheela.shop  /  demo-password-1234
-token: demo-session-token-do-not-use-in-production
-```
+| Token | Outcome |
+| --- | --- |
+| `pm_card_visa`, `pm_card_mastercard` | succeeds |
+| `pm_card_declined` | `card_declined` |
+| `pm_card_insufficient_funds` | `insufficient_funds` |
+| `pm_card_expired` | `expired_card` |
 
-Seeded by `seed.js`. The token is fixed on purpose — capability calls carry an
-end-user credential and a test needs one it can predict. That is only acceptable
-for a seeded demo; `DEMO_ACCOUNT=off` skips it entirely, and a real deployment must
-never ship a known-in-advance session token.
+An unrecognised token is a **400 that leaves the order untouched**, not a decline:
+a typo is a caller error, not an issuer decision, and treating it as a decline
+would mark the order failed and release its stock over a spelling mistake.
 
----
+### Sandbox mode
 
-## 6. Files I created
+`RAZORPAY_SIMULATE=1` runs the Razorpay flow with the wire cut — for when an
+account's business details are not yet approved and every real payment fails for
+reasons unrelated to this code. `createOrder`, `createPaymentLink` and
+`fetchPayment` return the shapes Razorpay would; **signing and verification are
+not stubbed**, so the code that decides whether an order is paid is the code that
+runs in production. The outcome is encoded in the payment id, the same way the
+simulated processor encodes it in a token. Enabling it with `NODE_ENV=production`
+throws at startup.
 
-### 6.1 The Cheela integration (the part you asked about)
+## 6. What the integration is made of
+
+### 6.1 The Cheela integration
 
 | File | Why it exists |
 | --- | --- |
-| **`server/.cheela/capabilities.ts`** (854 lines) | **The heart of the integration.** All 14 capabilities: zod input/output schemas, descriptions the model reads, `requiresEndUser` on the four order capabilities, and handlers that call `repo.js`. Also holds `defineCapability()`, `requireShopper()` and a typed facade over `repo.js` (plain JS) so this file type-checks on its own terms. |
+| **`server/.cheela/capabilities.ts`** (854 lines) | **The heart of the integration.** All 15 capabilities: zod input/output schemas, descriptions the model reads, `requiresEndUser` on the five order and address capabilities, and handlers that call `repo.js`. Also holds `defineCapability()`, `requireShopper()` and a typed facade over `repo.js` (plain JS) so this file type-checks on its own terms. |
 | **`server/.cheela/runtime.ts`** (25) | Creates the `Runtime`, grants the `cart:write` / `orders:write` permissions, and registers every capability. This is the file the CLI loads to discover what to deploy. |
 | **`server/cheela.config.ts`** (34) | Deploy config: API key (from env), ADP namespace, website metadata, and a conditionally-set endpoint. Scaffolded by `cheela init` — the 0.7 template still omits `provider`/`model`, which live on the dashboard. |
 | **`server/tsconfig.json`** (24) | The `.cheela` files are TypeScript. Node strips types natively at runtime, so this exists purely so the IDE and `npm run typecheck` agree. Needs `allowImportingTsExtensions` because Node requires the real `.ts` extension on imports, and `checkJs: false` so the plain-JS storefront resolves without being type-checked. |
 | **`client/src/components/Assistant.jsx`** (204) | The shopper-facing chat panel — `<CheelaProvider>` + `<Chat/>` from `@cheela/ui` behind a floating launcher. Passes `endUserToken` as a function so a later sign-in is picked up. Renders **only** if `VITE_CHEELA_PUBLIC_KEY` is set. Replies stream in and render as markdown (`@cheela/ui` 0.2.0). |
 | **`client/public/.well-known/agent-discovery.json`** (2063) | The published manifest, fetched by `cheela manifest pull`. Served as a static asset so external agents can discover the store. Committed, because a static host will not run the CLI. |
 | **`scripts/cheela-smoke.mjs`** (187) | 39-check test driving the capabilities as an agent would, including the auth boundary (no token, bad token, another shopper's order) and the full pay/decline/retry cycle. Runs the runtime in-process — no server, no API key — yet proves every schema, because `execute()` validates both directions. |
+| **`server/src/razorpay.js`** | The gateway: Orders, Payment Links, `fetchPayment`, and the two signature verifications. Talks to Razorpay over `fetch` rather than the SDK so the HMAC arithmetic — the part that decides whether money moved — is visible here rather than buried in a dependency. Also holds sandbox mode. |
+| **`server/src/webhooks.js`** | The signed webhook router, mounted on a raw body. Status codes are chosen for what they make Razorpay *do*: 401 on a bad signature (no retry wanted), 200 on an unknown order (retrying will not make it exist), 500 on a handler error (so the payment is not lost). |
+| **`client/src/pages/Pay.jsx`** | The hosted page an agent's payment link lands on. Reachable without signing in — a payment link is a bearer capability for one order, like an emailed invoice — and shows only the order number and what is owed. |
+| **`client/src/components/AddressForm.jsx`** | The address form shared by checkout and the account page, so the two cannot drift into accepting different things. Indian shape; the server re-validates the same rules. |
+| **`scripts/shared-cart-smoke.mjs`** | 13 checks that the assistant and the browser tab operate on one cart, including that an empty stale `cartId` cannot divert a signed-in shopper and a filled guest cart is adopted. |
+| **`scripts/actions-smoke.mjs`** | 11 checks running real capability output through `extractActions` — what the panel would actually render — and asserting `http:` and `javascript:` URLs are dropped. |
+| **`scripts/razorpay-smoke.mjs`** / **`razorpay-sandbox.mjs`** | 36 checks across signature tampering, idempotent settlement, underpayment refusal and sandbox pass/fail. Neither needs a Razorpay account. |
 | **`server/.env`** | 🔒 Git-ignored. Holds the real `ch_sk_…` deploy key. The CLI reads this automatically. |
 | **`server/.env.example`** | Committed template, key redacted. |
 | **`server/src/mock-payments.js`** (108) | The simulated processor: method tokens, test-card mapping, and the outcome table. No network, no real card. |
 | **`client/.env`** / **`.env.example`** | Browser config, kept separate because **anything here ships in the JS bundle** — so it only ever holds the public key. |
 
-### 6.2 Files I modified to wire it in
+### 6.2 Files modified to wire it in
 
 | File | The change |
 | --- | --- |
@@ -272,7 +286,7 @@ never ship a known-in-advance session token.
 **Other:** `scripts/smoke.mjs` (38-check REST API test), `client/index.html`,
 `client/vite.config.js` (proxies `/api` → :4000), `README.md`.
 
-### 6.4 Files I did *not* create
+### 6.4 Not hand-written
 
 - `server/.cheela/generated/**` and `generate.cache.json` — written by `cheela deploy`.
   Git-ignored; regenerated on demand.
@@ -412,8 +426,13 @@ a no-op here.
 ```bash
 npm run dev                 # storefront: :5173 (UI) + :4000 (API)
 
-npm run smoke               # 48 checks — REST API incl. payments (needs the server)
-npm run smoke:cheela        # 39 checks — capabilities, auth and payment, in-process
+npm run smoke               # 48 — REST API incl. payments (needs the server)
+npm run smoke:cheela        # 35 — capabilities, auth and payment, in-process
+npm run smoke:cart          # 13 — assistant and browser share one cart
+npm run smoke:actions       # 11 — the pay button renders
+npm run smoke:addresses     # 17 — address book and isolation
+npm run smoke:sandbox       # 16 — payment pass/fail, no network
+npm run smoke:razorpay      # 20 — signatures and webhooks
 npm run typecheck           # the .cheela TypeScript
 
 npm run cheela:dev          # list what the runtime would deploy, ship nothing
