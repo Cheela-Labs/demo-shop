@@ -52,14 +52,14 @@ demo@cheela.shop  /  demo-password-1234
 npm run smoke            # 48 — REST API, end to end, against a running server
 npm run smoke:cheela     # 35 — capabilities and the auth boundary, in-process
 npm run smoke:cart       # 13 — the assistant and the browser tab share one cart
-npm run smoke:actions    # 11 — the pay button actually renders in chat
+npm run smoke:actions    # 20 — the pay button renders, and the payment poll
 npm run smoke:addresses  # 17 — address book, including cross-account isolation
 npm run smoke:sandbox    # 16 — payment pass/fail, no network to Razorpay
 npm run smoke:razorpay   # 20 — signature tampering and webhook settlement
 npm run typecheck        # the .cheela TypeScript
 ```
 
-160 checks. None of them need a Razorpay account or a Cheela API key.
+169 checks. None of them need a Razorpay account or a Cheela API key.
 
 ---
 
@@ -174,6 +174,11 @@ Razorpay Checkout is a browser modal, and paying requires a card, a UPI PIN or a
 credentials that must never travel through a language model. So the agent does the part it
 legitimately can: it creates a **Razorpay payment link** and hands over the URL. The shopper
 authenticates with their own bank; the webhook settles the order.
+
+The chat then finds out on its own. `checkout-pay-order` attaches a `cheela.pending` spec, so
+the panel polls `orders-get-order` every 15s until the order stops being `pending_payment` —
+no asking the shopper whether they paid, and no relying on the model to re-check.
+`INTEGRATION.md` §15 has the details.
 
 That link is rendered as a real button, not left to prose. Capability results declare their
 own UI actions (`cheela.actions`), so the pay button doesn't depend on the model choosing to

@@ -257,15 +257,53 @@ function requireShopper(context: ActionContext) {
  * the rendering beyond the model's reach — it still decides whether to call the
  * capability, but not how the result looks.
  */
-const actionsShape = z.object({
-  actions: z.array(z.object({
-    type: z.literal('link'),
-    label: z.string(),
-    url: z.string(),
-    description: z.string().optional(),
-    style: z.enum(['primary', 'secondary']).optional(),
-  })),
+const linkActions = z.array(z.object({
+  type: z.literal('link'),
+  label: z.string(),
+  url: z.string(),
+  description: z.string().optional(),
+  style: z.enum(['primary', 'secondary']).optional(),
+}));
+
+const actionsShape = z.object({ actions: linkActions }).optional();
+
+/**
+ * `cheela.pending` — protocol 0.4's answer to work that finishes elsewhere.
+ *
+ * Paying happens on Razorpay's page, in another tab, minutes later. Until now
+ * the only way the conversation learned the outcome was the instruction below
+ * telling the model to ask the shopper whether they had paid and then call
+ * `orders-get-order` again — which makes the confirmation depend on the shopper
+ * saying something, and on the model choosing to re-check.
+ *
+ * A pending spec moves that off the model entirely: the widget polls the named
+ * capability on its own until the output reports `cheela.settled`, then resumes
+ * the turn with the result. The shopper pays, comes back, and the chat already
+ * knows.
+ *
+ * `intervalMs` and `timeoutMs` are clamped by the protocol (floor 1s, ceiling
+ * 15 minutes), so the values here are requests rather than guarantees.
+ */
+const pendingSpec = z.object({
+  capability: z.string().describe('Capability the widget should poll'),
+  input: z.record(z.string(), z.unknown()).optional(),
+  intervalMs: z.number().int().optional(),
+  timeoutMs: z.number().int().optional(),
+});
+
+/** What `checkout-pay-order` attaches: a pay button, and something to watch. */
+const payEnvelopeShape = z.object({
+  actions: linkActions.optional(),
+  pending: pendingSpec.optional(),
 }).optional();
+
+/**
+ * `cheela.settled` — the one field the poller reads out of a status result.
+ *
+ * Everything else in the output stays opaque to Cheela and goes to the model
+ * untouched, so this says only "stop polling", never what the answer was.
+ */
+const settledShape = z.object({ settled: z.boolean() }).optional();
 
 interface LinkActionInput {
   label: string;
@@ -947,8 +985,10 @@ export const payOrder = defineCapability(
         .describe('Give this to the shopper to open and pay. Null when payment is already settled.'),
       instruction: z.string().describe('What to tell the shopper next'),
       // Rendered by the chat panel as a real button, so the shopper gets a
-      // reliable way to pay even if the model never repeats the URL.
-      cheela: actionsShape,
+      // reliable way to pay even if the model never repeats the URL — and,
+      // since protocol 0.4, a pending spec so the panel watches for the
+      // payment landing instead of waiting to be asked.
+      cheela: payEnvelopeShape,
     }),
   }),
   createAction({
@@ -1001,14 +1041,31 @@ export const payOrder = defineCapability(
           instruction:
             `Tell the shopper their payment button is ready below — ${money(order.total)}, ` +
             'payable by UPI, card, netbanking or wallet. You do not need to repeat the URL; ' +
-            'it is rendered for them. Once they confirm they have paid, call orders-get-order ' +
-            `with "${order.number}" to check it settled.`,
-          cheela: cheelaActions({
-            label: `Pay ${money(order.total)}`,
-            url: link.short_url,
-            description: `Order ${order.number} · UPI, card, netbanking or wallet`,
-            style: 'primary',
-          }),
+            'it is rendered for them. Do not ask whether they have paid and do not call ' +
+            'orders-get-order to find out: the panel is already watching this order and will ' +
+            'tell you the moment it settles. Just say the button is ready.',
+          cheela: {
+            ...cheelaActions({
+              label: `Pay ${money(order.total)}`,
+              url: link.short_url,
+              description: `Order ${order.number} · UPI, card, netbanking or wallet`,
+              style: 'primary',
+            }),
+            // Watch this order until it settles. `orders-get-order` is
+            // `requiresEndUser`, and the poll carries the shopper's own token,
+            // so it stays scoped to them exactly like every other call.
+            //
+            // Fifteen seconds rather than the 3s default: a shopper has to
+            // switch tab, choose UPI or card, and authenticate with their bank.
+            // Polling faster would just bill more executions to reach the same
+            // answer. The ceiling is the protocol's own 15-minute maximum.
+            pending: {
+              capability: 'orders-get-order',
+              input: { orderNumber: order.number },
+              intervalMs: 15_000,
+              timeoutMs: 15 * 60_000,
+            },
+          },
         };
       }
 
@@ -1041,14 +1098,28 @@ export const getOrder = defineCapability(
     version: '2.0.0',
     requiresEndUser: true,
     input: z.object({ orderNumber: z.string() }),
-    output: orderShape,
+    // Doubles as the status read that `checkout-pay-order` asks the panel to
+    // poll, so it carries `cheela.settled`.
+    output: orderShape.extend({ cheela: settledShape }),
   }),
   createAction({
     name: 'getOrder',
     description: 'Fetch one order belonging to the signed-in shopper.',
     handler: (context, input) => {
       const shopper = requireShopper(context);
-      return toOrder(ownedOrder(input.orderNumber, shopper.id));
+      const order = toOrder(ownedOrder(input.orderNumber, shopper.id));
+
+      /*
+       * Settled means "stop polling", not "paid".
+       *
+       * A declined card has to end the wait too, otherwise the panel sits there
+       * until the 15-minute timeout while the shopper is looking at a failure
+       * message and wondering what happened. `pending_payment` is the only
+       * status that is genuinely still in flight; everything else — paid,
+       * payment_failed, cancelled — is a final answer, and the model gets the
+       * full order either way to explain which one it was.
+       */
+      return { ...order, cheela: { settled: order.status !== 'pending_payment' } };
     },
   }),
 );

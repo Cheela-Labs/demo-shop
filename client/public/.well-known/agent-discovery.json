@@ -1452,11 +1452,38 @@
                   ],
                   "additionalProperties": false
                 }
+              },
+              "pending": {
+                "type": "object",
+                "properties": {
+                  "capability": {
+                    "type": "string",
+                    "description": "Capability the widget should poll"
+                  },
+                  "input": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {}
+                  },
+                  "intervalMs": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "timeoutMs": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "capability"
+                ],
+                "additionalProperties": false
               }
             },
-            "required": [
-              "actions"
-            ],
             "additionalProperties": false
           }
         },
@@ -1900,6 +1927,18 @@
                 "type": "null"
               }
             ]
+          },
+          "cheela": {
+            "type": "object",
+            "properties": {
+              "settled": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "settled"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
@@ -2240,5 +2279,5 @@
       }
     }
   ],
-  "lastUpdated": "2026-08-08T06:42:44.650Z"
+  "lastUpdated": "2026-08-08T08:50:20.477Z"
 }

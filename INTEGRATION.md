@@ -226,7 +226,7 @@ throws at startup.
 | **`server/tsconfig.json`** (24) | The `.cheela` files are TypeScript. Node strips types natively at runtime, so this exists purely so the IDE and `npm run typecheck` agree. Needs `allowImportingTsExtensions` because Node requires the real `.ts` extension on imports, and `checkJs: false` so the plain-JS storefront resolves without being type-checked. |
 | **`client/src/components/Assistant.jsx`** (457) | The shopper-facing chat panel, behind a floating launcher. The transcript, composer and status are this project's own React and CSS; the conversation underneath them is `getSession` from `@cheela/web-component/headless`, and message bodies are built by that package's `renderMarkdown` / `renderActions` — see §14. Passes `endUserToken` as a function so a later sign-in is picked up. Renders **only** if `VITE_CHEELA_PUBLIC_KEY` is set. Replies stream in token by token. |
 | **`client/public/.well-known/agent-discovery.json`** (2063) | The published manifest, fetched by `cheela manifest pull`. Served as a static asset so external agents can discover the store. Committed, because a static host will not run the CLI. |
-| **`scripts/cheela-smoke.mjs`** (187) | 39-check test driving the capabilities as an agent would, including the auth boundary (no token, bad token, another shopper's order) and the full pay/decline/retry cycle. Runs the runtime in-process — no server, no API key — yet proves every schema, because `execute()` validates both directions. |
+| **`scripts/cheela-smoke.mjs`** (187) | 35-check test driving the capabilities as an agent would, including the auth boundary (no token, bad token, another shopper's order) and the full pay/decline/retry cycle. Runs the runtime in-process — no server, no API key — yet proves every schema, because `execute()` validates both directions. |
 | **`server/src/razorpay.js`** | The gateway: Orders, Payment Links, `fetchPayment`, and the two signature verifications. Talks to Razorpay over `fetch` rather than the SDK so the HMAC arithmetic — the part that decides whether money moved — is visible here rather than buried in a dependency. Also holds sandbox mode. |
 | **`server/src/webhooks.js`** | The signed webhook router, mounted on a raw body. Status codes are chosen for what they make Razorpay *do*: 401 on a bad signature (no retry wanted), 200 on an unknown order (retrying will not make it exist), 500 on a handler error (so the payment is not lost). |
 | **`client/src/pages/Pay.jsx`** | The hosted page an agent's payment link lands on. Reachable without signing in — a payment link is a bearer capability for one order, like an emailed invoice — and shows only the order number and what is owed. |
@@ -368,9 +368,10 @@ which are in force — currently openrouter / `openai/gpt-oss-20b:free`.
 ### What the 0.7 build changed here
 
 Current versions: `@cheela/cli@0.9.0`, `@cheela/{runtime,sdk}@0.7.0`,
-`@cheela/web-component@0.3.0`, `@cheela/client@0.5.0` (see §12 for what the
-browser side brought, and §14 for why the widget package is the web-component
-one rather than `@cheela/ui`). Three things mattered on the 0.7 core:
+`@cheela/web-component@0.4.0`, `@cheela/client@0.6.0`, `@cheela/protocol@0.4.0`
+(see §12 for what the browser side brought, §14 for why the widget package is
+the web-component one rather than `@cheela/ui`, and §15 for what 0.4 added).
+Three things mattered on the 0.7 core:
 
 **1. `createCapability` is generic, and it is the reason this file shrank in
 concept if not in lines.** In 0.6 it returned `Capability<unknown, unknown>`, so
@@ -430,7 +431,7 @@ npm run dev                 # storefront: :5173 (UI) + :4000 (API)
 npm run smoke               # 48 — REST API incl. payments (needs the server)
 npm run smoke:cheela        # 35 — capabilities, auth and payment, in-process
 npm run smoke:cart          # 13 — assistant and browser share one cart
-npm run smoke:actions       # 11 — the pay button renders
+npm run smoke:actions       # 20 — the pay button renders, and the payment poll
 npm run smoke:addresses     # 17 — address book and isolation
 npm run smoke:sandbox       # 16 — payment pass/fail, no network
 npm run smoke:razorpay      # 20 — signatures and webhooks
@@ -494,7 +495,7 @@ shopper" in prose, and descriptions *are* published.
 *"Could not reach the Cheela API. Check the network connection and baseUrl."* —
 even though the API is reachable, CORS is correct, and the key is valid.
 
-**Still present on 0.5.0**, the version `@cheela/web-component@0.3.0` pins
+**Still present on 0.6.0**, the version `@cheela/web-component@0.4.0` pins
 *exactly* — so replacing `@cheela/ui` (§14) did not replace the bug. Re-checked
 at that release: the constructor is byte-for-byte the same as 0.2.0's, and the
 new entry point does not help, because `createChatController` builds the client
@@ -571,7 +572,7 @@ embedding surface drives, `@cheela/web-component`'s controller included, and its
 public API has not changed since 0.2.0, so a newer client streams with **no UI
 code change**.
 
-**`@cheela/web-component@0.3.0` depends on `@cheela/client@0.5.0` directly, so
+**`@cheela/web-component@0.4.0` depends on `@cheela/client@0.6.0` directly, so
 nothing special is needed — just install it.** An earlier revision of this
 project forced a newer client under an older widget package with a root
 `overrides` entry; that is gone, and should not be reintroduced. If you ever do
@@ -736,3 +737,130 @@ to 457, and `styles.css` by 111 lines — the CSS that used to arrive as
 `@cheela/ui/style.css`. In exchange the chat matches the shop, and the two
 failure modes in §11 and §12 are handled where they are visible to a shopper
 rather than where the library happened to leave them.
+
+---
+
+## 15. `cheela.pending` — waiting for money that arrives elsewhere
+
+Protocol 0.4 added a second envelope alongside `cheela.actions`, and it closes
+the one hole this shop's payment flow still had.
+
+**The problem.** The agent cannot charge anyone (§5), so `checkout-pay-order`
+hands over a Razorpay link and the shopper pays on Razorpay's page, in another
+tab, minutes later. Nothing tells the conversation it worked. The old
+instruction handled this by asking the model to ask:
+
+> *"Once they confirm they have paid, call orders-get-order with "CHL-…" to
+> check it settled."*
+
+Which makes confirmation depend on the shopper volunteering that they paid, and
+on the model choosing to re-check. Neither is reliable, and the failure is
+silent — the shopper pays and the chat still believes the order is unpaid.
+
+**The fix.** A capability result may now carry a poll instruction:
+
+```ts
+cheela: {
+  ...cheelaActions({ label: `Pay ${money(order.total)}`, url: link.short_url, … }),
+  pending: {
+    capability: 'orders-get-order',
+    input: { orderNumber: order.number },
+    intervalMs: 15_000,
+    timeoutMs: 15 * 60_000,
+  },
+}
+```
+
+The panel polls that capability itself until the output reports
+`cheela.settled`, then resumes the turn with the result. The model is out of the
+loop entirely.
+
+```mermaid
+sequenceDiagram
+    participant U as Shopper
+    participant W as Assistant.jsx
+    participant C as Cheela cloud
+    participant E as Express /cheela/execute
+    participant R as Razorpay
+
+    U->>W: "pay for CHL-1042"
+    W->>C: message
+    C->>E: checkout-pay-order
+    E-->>C: paymentUrl + cheela.actions + cheela.pending
+    C-->>W: turn ends — status becomes "waiting"
+    Note over W: pay button rendered,<br/>panel starts polling
+    U->>R: pays on Razorpay's page (another tab)
+    R->>E: webhook payment.captured → repo.capturePayment
+    W->>C: poll orders-get-order (every 15s, carries endUserToken)
+    C->>E: orders-get-order
+    E-->>C: order + cheela.settled = true
+    C-->>W: settled → turn resumes with the paid order
+    W->>U: "Payment received — order CHL-1042 is confirmed."
+```
+
+### Four decisions worth recording
+
+**Settled means "stop polling", not "paid".** `orders-get-order` reports
+`settled` for anything that is no longer `pending_payment` — including
+`payment_failed` and `cancelled`. A declined card has to end the wait too;
+otherwise the panel keeps polling for fifteen minutes while the shopper looks at
+a failure message. The model still receives the whole order, so it can say which
+outcome it was.
+
+**15 seconds, not the 3-second default.** The shopper has to switch tab, choose
+UPI or card, and authenticate with their bank. Polling five times faster reaches
+the same answer having billed five times the executions. The protocol clamps to
+a 1-second floor and a 15-minute ceiling regardless.
+
+**The poll carries the end-user token.** `orders-get-order` is
+`requiresEndUser`, and `callCapability` resolves `endUserToken` per request the
+same way `execute` does — so the poll is scoped to that shopper, and the
+ownership guarantee in §4 holds for it exactly as for everything else. No new
+auth surface.
+
+**The instruction had to be rewritten, not just extended.** It previously told
+the model to ask whether the shopper had paid. Left in place, the model would
+have gone on asking while the panel was already watching — two mechanisms racing
+to answer the same question, one of them out loud. It now says explicitly *not*
+to ask and *not* to call `orders-get-order`.
+
+### On the widget side
+
+Polling lives in `ConversationStore`, which `createChatController` wraps, so the
+custom panel in §14 inherited it without implementing anything. Two things did
+need doing:
+
+- **A new status.** `ConversationStatus` gained `waiting`, and
+  `ConversationState` gained `pending`. Without handling it the panel looks
+  completely idle for up to fifteen minutes while it is in fact working, so
+  `Assistant.jsx` renders a waiting notice — deliberately not a message bubble,
+  since nobody said it, and it disappears when the poll resolves.
+- **Checking the stall guard still holds.** The guard from §12 fires on
+  `submitting → not submitting`, which now includes `submitting → waiting`. It
+  survives unchanged because its stall test is gated on `idle`, so a wait is
+  never mistaken for a turn that failed to reply — and the refresh it triggers
+  is correct there anyway. Worth stating because the reasoning is not obvious
+  from the code, and a future edit could easily break it.
+
+Sends stay allowed while waiting, so the composer is not disabled — which is why
+`waiting` is tracked separately from `busy` rather than folded into it.
+
+One gap: `ConversationStore` exposes `stopWaiting()`, but the `ChatController`
+interface does not surface it, so there is no way to cancel a wait from the
+headless API. A shopper who abandons a payment waits out the timeout. Not worth
+reaching around the controller for; worth knowing.
+
+### What proves it
+
+`scripts/actions-smoke.mjs` grew from 11 checks to 20, running the real
+capability output through `extractPending` and `isSettled` — the same functions
+the widget uses, both of which drop malformed input silently rather than
+throwing, so a subtly wrong spec would cost the poll with nothing to say why.
+It asserts the spec names a capability the runtime actually registered, that the
+interval and timeout survive clamping, that an unpaid order does **not** settle,
+and that a captured one does.
+
+Settling it in the test goes through `repo.capturePayment` rather than
+`checkout-pay-order`, because with Razorpay configured — sandbox included — the
+pay capability only *issues* a link. Money lands on the webhook, and
+`repo.capturePayment` is what that webhook calls.

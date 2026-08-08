@@ -24,6 +24,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   DEFAULT_SESSION,
+  DEFAULT_WAITING_LABEL,
   getSession,
   renderActions,
   renderMarkdown,
@@ -246,7 +247,12 @@ function useAssistant() {
     const before = previousStatus.current;
     previousStatus.current = state.status;
 
-    // Only act on the edge where a turn finishes.
+    // Only act on the edge where a turn finishes. Since protocol 0.4 that edge
+    // can land on `waiting` rather than `idle` — a turn that ended by handing
+    // the panel something to poll. Refreshing the bag there is right (the
+    // capability that produced the pending spec may well have changed the
+    // cart), and the stall check below is guarded on `idle`, so a wait is
+    // never mistaken for a turn that failed to reply.
     if (before !== 'submitting' || state.status === 'submitting') return;
 
     // The assistant edits the cart through a completely different path, so the
@@ -304,12 +310,23 @@ function useAssistant() {
     chat.reset();
   }, [chat]);
 
-  return { messages: state.messages, busy: state.status === 'submitting', problem, send, clear };
+  return {
+    messages: state.messages,
+    busy: state.status === 'submitting',
+    // The turn is over and the panel is now watching a capability on its own —
+    // for this shop, an order waiting to be paid on Razorpay's page. Sends stay
+    // allowed while this is true, which is why it is separate from `busy`
+    // rather than folded into it.
+    waiting: state.status === 'waiting',
+    problem,
+    send,
+    clear,
+  };
 }
 
 function ShoppingAssistant() {
   const { user } = useShop();
-  const { messages, busy, problem, send, clear } = useAssistant();
+  const { messages, busy, waiting, problem, send, clear } = useAssistant();
 
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState('');
@@ -337,7 +354,7 @@ function ShoppingAssistant() {
     const node = log.current;
     if (!node || !pinned.current) return;
     node.scrollTop = node.scrollHeight;
-  }, [messages, busy, open, problem]);
+  }, [messages, busy, waiting, open, problem]);
 
   const trackScroll = () => {
     const node = log.current;
@@ -426,6 +443,21 @@ function ShoppingAssistant() {
                   <span />
                   <span />
                 </div>
+              )}
+
+              {/*
+                The turn has finished and the panel is polling on its own —
+                here, an order sitting on Razorpay's page. Without this the
+                shopper sees a settled-looking conversation for up to fifteen
+                minutes and has no idea anything is still happening. Deliberately
+                not a bubble: nobody said this, and it disappears when the poll
+                resolves rather than staying in the transcript.
+              */}
+              {waiting && (
+                <p className="chat-waiting" role="status">
+                  <span className="chat-waiting-dot" />
+                  {DEFAULT_WAITING_LABEL}
+                </p>
               )}
             </div>
 
