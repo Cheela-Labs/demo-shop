@@ -29,6 +29,12 @@ export default defineConfig({
     url: process.env.STOREFRONT_URL ?? "http://localhost:5173",
   },
   adp: {
-    namespace: "com.example.cheelashop", // reverse-DNS style, e.g. your domain
+    // Reverse-DNS of the storefront's own hostname, demo-shop.cheelalabs.com.
+    //
+    // This is baked into every published capability name
+    // ("com.cheelalabs.demo-shop.cart-view"), so it is effectively permanent:
+    // changing it after an agent has discovered the store renames every
+    // capability that agent knows about.
+    namespace: "com.cheelalabs.demo-shop",
   },
 });
