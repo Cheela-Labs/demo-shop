@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 
-import { api } from '../api';
+import { api, money } from '../api';
 import ProductCard from '../components/ProductCard';
 import { ArrowRight, Leaf, Shield, Truck } from '../components/Icons';
+import { useShop } from '../store';
 
 export default function Home() {
+  const { cart } = useShop();
+  const freeOver = cart?.freeShippingThreshold != null ? money(cart.freeShippingThreshold) : null;
   const [featured, setFeatured] = useState([]);
   const [recent, setRecent] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -53,7 +56,11 @@ export default function Home() {
       <section style={{ marginBottom: 46 }}>
         <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
           {[
-            [<Truck key="t" />, 'Free shipping over $75', 'Two to four working days, tracked.'],
+            // Priced by the server, not written in here — the shop is INR and
+            // this promised "$75" for as long as it has existed.
+            [<Truck key="t" />,
+              freeOver ? `Free shipping over ${freeOver}` : 'Free shipping on larger orders',
+              'Two to four working days, tracked.'],
             [<Shield key="s" />, '2-year guarantee', 'Covers everything but obvious abuse.'],
             [<Leaf key="l" />, 'Recycled where we can', 'And honest about where we cannot.'],
           ].map(([icon, title, body]) => (

@@ -44,7 +44,7 @@ simply doesn't render the chat widget.
 
 The 16 hand-written products are enough to read the code by and far too few to see how any of
 this behaves at the size of a real store. `npm run dataset` writes a **2,000-product,
-15,000-review** catalogue and `npm run seed` loads it:
+16,900-review** catalogue and `npm run seed` loads it:
 
 ```bash
 npm run dataset          # writes server/data/dataset/*.csv

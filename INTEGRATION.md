@@ -1021,7 +1021,7 @@ Sixteen products is a readable fixture and a misleading one. Almost everything
 that makes a large catalogue hard — ranking, paging, how much of a result set a
 model is allowed to see, what "top rated" means when half the shelf has three
 reviews — is invisible at that size. `npm run dataset` writes 2,000 products and
-15,000 reviews; `npm run seed` loads them.
+~16,900 reviews; `npm run seed` loads them.
 
 ### Why the files are CSV, and why those column names
 
@@ -1054,6 +1054,14 @@ CSV always produces the same catalogue and the image cache stays valid. Price is
 the one conversion that matters — the file says rupees as a float, the shop
 stores integer paise, and `Math.round` rather than truncation is the difference
 between ₹1,299.99 and ₹1,299.98 on someone's invoice.
+
+Reviews for the curated 16 are generated too, keyed by their real slug
+(`aurora-over-ear`) rather than a `P000123`. Seeding recomputes every product's
+review count from the review table, so without them the flagship products —
+the ones a demo actually opens — would show a 4.8 beside "no reviews yet",
+their declared counts silently overwritten with zero. `shopIdFor()` in
+`dataset.js` is what keeps the two id shapes apart; the real Kaggle file only
+ever contains the namespaced kind.
 
 Dataset users are **not** inserted into the `users` table. That table holds real
 sign-ins with password hashes; 10,000 synthetic people in it would be 10,000

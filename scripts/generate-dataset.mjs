@@ -26,6 +26,8 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { products as curated } from '../server/src/products.js';
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OUT_DIR = join(HERE, '..', 'server', 'data', 'dataset');
 
@@ -334,6 +336,48 @@ for (let i = 1; i <= REVIEW_COUNT; i += 1) {
 for (const p of products) {
   const agg = perProduct.get(p.product_id);
   p.rating = agg ? (agg.sum / agg.n).toFixed(2) : (3.6 + r() * 1.3).toFixed(2);
+}
+
+/* Reviews for the curated 16 -----------------------------------------------
+ * These products are declared in server/src/products.js, not in products.csv,
+ * and they are the ones a demo actually opens. Seeding recomputes every
+ * product's review count from the review table, so without rows here the
+ * flagship products would show a 4.8 next to "no reviews yet" — the count they
+ * declare in source would simply be overwritten with zero.
+ *
+ * Generated last so the draws above are untouched: the dataset products keep
+ * the same names, prices and artwork, and re-running the generator does not
+ * invalidate 6,000 rasterised PNGs.
+ *
+ * Counts are capped well below the declared figures. The point is a review list
+ * with a believable shape, not 987 rows nobody scrolls. */
+const curatedIds = new Set();
+for (const p of curated) {
+  // Aim the distribution at the rating the product declares, so the recomputed
+  // average lands near the number the hand-written copy was built around.
+  const target = Number(p.rating) || 4.5;
+  const count = Math.min(Number(p.reviews) || 40, 120);
+  curatedIds.add(p.id);
+
+  for (let i = 0; i < count; i += 1) {
+    // Draw around the target: mostly the two stars either side of it, with a
+    // thin tail, which is what a real product's histogram looks like.
+    const roll = r();
+    let stars = Math.round(target);
+    if (roll > 0.62) stars = Math.min(5, stars + 1);
+    else if (roll > 0.44) stars = Math.max(1, stars - 1);
+    else if (roll > 0.38) stars = Math.max(1, stars - 2);
+    stars = Math.max(1, Math.min(5, stars));
+
+    reviews.push({
+      review_id: `RC${String(reviews.length + 1).padStart(6, '0')}`,
+      user_id: users[int(r, 0, users.length - 1)].user_id,
+      product_id: p.id,
+      rating: stars,
+      review_text: pick(r, REVIEW_TEXT[stars]),
+      review_date: dateBefore(int(r, 1, 900)),
+    });
+  }
 }
 
 /* ---------------------------------- write --------------------------------- */

@@ -9,7 +9,7 @@ import { useShop } from '../store';
 
 export default function Product() {
   const { id } = useParams();
-  const { addItem } = useShop();
+  const { addItem, cart } = useShop();
   const [data, setData] = useState(null);
   const [qty, setQty] = useState(1);
   const [error, setError] = useState(null);
@@ -124,7 +124,13 @@ export default function Product() {
           </dl>
 
           <div style={{ display: 'flex', gap: 22, marginTop: 22, color: 'var(--muted)', fontSize: 14, flexWrap: 'wrap' }}>
-            <span style={{ display: 'flex', gap: 7, alignItems: 'center' }}><Truck width={17} height={17} /> Free over $75</span>
+            {/* Threshold comes from the cart the server priced, not a literal —
+                the shop is INR, and this line used to promise "$75". */}
+            {cart?.freeShippingThreshold != null && (
+              <span style={{ display: 'flex', gap: 7, alignItems: 'center' }}>
+                <Truck width={17} height={17} /> Free delivery over {money(cart.freeShippingThreshold)}
+              </span>
+            )}
             <span style={{ display: 'flex', gap: 7, alignItems: 'center' }}><Shield width={17} height={17} /> 2-year guarantee</span>
           </div>
         </div>

@@ -215,6 +215,22 @@ export function toProduct(row) {
   };
 }
 
+/**
+ * Resolves a CSV `product_id` to the id the shop actually stores.
+ *
+ * Two kinds of id arrive in reviews.csv. Bulk catalogue rows use the dataset's
+ * own `P000123`, which is namespaced to `d-p000123` so it can never collide
+ * with a hand-written slug. Reviews for the curated 16 carry that product's
+ * real slug (`aurora-over-ear`) and pass through untouched — those products are
+ * declared in products.js, not in products.csv, so there is nothing to
+ * namespace them away from.
+ *
+ * The real Kaggle file only ever contains the first kind.
+ */
+function shopIdFor(productId) {
+  return /^P\d+$/i.test(productId) ? `d-${productId.toLowerCase()}` : productId;
+}
+
 /* ---------------------------------- load ----------------------------------- */
 
 /**
@@ -245,7 +261,7 @@ export function loadDataset() {
 
     reviews.push({
       id: String(row.review_id || '').trim() || `r-${reviews.length}`,
-      productId: `d-${productId.toLowerCase()}`,
+      productId: shopIdFor(productId),
       author: names.get(row.user_id) || 'Verified buyer',
       rating: Math.round(rating),
       body,
