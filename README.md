@@ -35,10 +35,48 @@ npm run dev
 - Storefront → http://localhost:5173
 - API → http://localhost:4000/api
 
-First boot draws the artwork, rasterises it to PNG and seeds the database (a few seconds).
-Every boot after that is instant. **No credentials are required** — with Cheela and Razorpay
-unconfigured the shop runs on a simulated payment processor and simply doesn't render the
-chat widget.
+First boot draws the artwork, rasterises it to PNG and seeds the database (a few seconds on
+the 16 curated products). Every boot after that is instant. **No credentials are required** —
+with Cheela and Razorpay unconfigured the shop runs on a simulated payment processor and
+simply doesn't render the chat widget.
+
+### The bulk catalogue
+
+The 16 hand-written products are enough to read the code by and far too few to see how any of
+this behaves at the size of a real store. `npm run dataset` writes a **2,000-product,
+15,000-review** catalogue and `npm run seed` loads it:
+
+```bash
+npm run dataset          # writes server/data/dataset/*.csv
+npm run seed             # loads them, then rasterises the artwork
+```
+
+The CSVs use the column layout of the [Kaggle e-commerce
+dataset](https://www.kaggle.com/datasets/abhayayare/e-commerce-dataset) —
+`product_id, product_name, category, price, rating` and `review_id, user_id, product_id,
+rating, review_text, review_date`. Kaggle needs an account to download, and this repo should
+not, so `scripts/generate-dataset.mjs` writes files in that layout instead. **Dropping the
+real Kaggle CSVs into `server/data/dataset/` works with no code change** — `dataset.js` reads
+those column names and nothing else. The Kaggle download carries three more tables (orders,
+order_items, events) that this shop has no use for: it generates real orders through its own
+checkout.
+
+The generator is seeded, so the same command always produces the same catalogue. Prices are
+banded per product *type* rather than per category — a mouse and a monitor priced from one
+range gives you an ₹80,000 mouse and an assistant that looks broken.
+
+Two things get noticeably slower, both on purpose:
+
+| | 16 curated | + 2,000 dataset |
+| --- | --- | --- |
+| PNGs rasterised | 48 | 6,048 |
+| SQLite on disk | 2.3 MB | ~205 MB |
+| Seed time (16 cores) | ~10 s | ~7.5 min |
+
+The artwork is seeded per product id, so those 2,000 products really are 2,000 different
+pictures rather than one picture repeated. That is what makes the image step the cost it is.
+`server/data/` is git- and docker-ignored, so the container generates and seeds its own copy
+at build time.
 
 Sign in with the seeded account:
 
@@ -56,10 +94,11 @@ npm run smoke:actions    # 39 — the pay button, the payment poll, product card
 npm run smoke:addresses  # 17 — address book, including cross-account isolation
 npm run smoke:sandbox    # 16 — payment pass/fail, no network to Razorpay
 npm run smoke:razorpay   # 20 — signature tampering and webhook settlement
+npm run smoke:reviews    # 42 — CSV parsing, paise conversion, review paging, rating shrinkage
 npm run typecheck        # the .cheela TypeScript
 ```
 
-188 checks. None of them need a Razorpay account or a Cheela API key.
+230 checks. None of them need a Razorpay account or a Cheela API key.
 
 ---
 
@@ -129,14 +168,15 @@ referenced, so editing or deleting it later cannot rewrite where a past order sh
 
 ## The Cheela integration
 
-15 capabilities expose the shop to agents. They call `repo.js` directly — the same code the
+16 capabilities expose the shop to agents. They call `repo.js` directly — the same code the
 REST API uses — so a human clicking buttons and an agent invoking capabilities cannot end up
 with different rules about stock, totals or payment.
 
 | Capability | Auth | Does |
 | --- | --- | --- |
 | `catalog-search-products` | — | Search/filter by text, category, budget, stock |
-| `catalog-get-product` | — | Full detail: description, specs, stock, related |
+| `catalog-get-product` | — | Full detail: description, specs, stock, related, rating summary |
+| `catalog-get-product-reviews` | — | Review text and the star histogram, sortable to most critical |
 | `catalog-list-categories` | — | Categories with counts |
 | `cart-view` | — | Contents and totals |
 | `cart-add-item` | — | Add a product |
@@ -229,8 +269,9 @@ server/
   src/
     db.js            schema + connection (node:sqlite, no native deps)
     svg.js           the illustrations
-    products.js      catalogue seed data
-    seed.js          SVG → PNG → BLOB pipeline
+    products.js      the 16 curated products, hand-written
+    dataset.js       CSV → product mapping for the 2,000-product bulk catalogue
+    seed.js          SVG → PNG → BLOB pipeline, on a worker pool
     repo.js          all queries; the one implementation REST and capabilities share
     auth.js          scrypt passwords, revocable bearer sessions
     routes.js        the REST API
@@ -239,7 +280,7 @@ server/
     mock-payments.js the simulated processor used when Razorpay is unconfigured
     index.js         Express assembly + /cheela/execute
   .cheela/
-    capabilities.ts  the 15 capabilities
+    capabilities.ts  the 16 capabilities
     runtime.ts       registers them 
   cheela.config.ts   endpoint + ADP namespace
 client/

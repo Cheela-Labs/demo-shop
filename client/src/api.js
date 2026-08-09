@@ -47,6 +47,12 @@ export const api = {
     return request(`/products?${qs}`);
   },
   product: (id) => request(`/products/${encodeURIComponent(id)}`),
+  reviews: (id, params = {}) => {
+    const qs = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== '' && v != null),
+    );
+    return request(`/products/${encodeURIComponent(id)}/reviews?${qs}`);
+  },
   categories: () => request('/categories'),
 
   createCart: () => request('/cart', { method: 'POST' }),

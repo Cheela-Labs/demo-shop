@@ -55,11 +55,29 @@ function mapProduct(row) {
   };
 }
 
+/**
+ * Sorting by raw average is wrong once the catalogue is large enough to contain
+ * one-review products: a lone 5★ outranks a 4.7 carrying three hundred reviews,
+ * and the "top rated" page fills with things nobody has bought. This is the
+ * standard shrinkage fix — pull every average toward the catalogue mean in
+ * proportion to how little evidence backs it, so a rating has to be earned by
+ * volume before it can win.
+ *
+ * PRIOR_WEIGHT is how many average-rated reviews a new product is treated as
+ * already having. At 25 a product needs roughly that many before its own score
+ * dominates the prior.
+ */
+const PRIOR_WEIGHT = 25;
+const BAYESIAN_RATING = `
+  ((rating * reviews) + (${PRIOR_WEIGHT} * (SELECT AVG(rating) FROM products WHERE reviews > 0)))
+  / (reviews + ${PRIOR_WEIGHT})
+`;
+
 const SORTS = {
   featured: 'featured DESC, reviews DESC',
   'price-asc': 'price ASC',
   'price-desc': 'price DESC',
-  rating: 'rating DESC, reviews DESC',
+  rating: `${BAYESIAN_RATING} DESC, reviews DESC`,
   newest: 'created_at DESC, id ASC',
   name: 'name ASC',
 };
@@ -115,6 +133,72 @@ export function relatedProducts(id, limit = 4) {
     .prepare('SELECT * FROM products WHERE category = ? AND id != ? ORDER BY rating DESC LIMIT ?')
     .all(product.category, id, limit)
     .map(mapProduct);
+}
+
+/* --------------------------------- reviews -------------------------------- */
+
+const REVIEW_SORTS = {
+  recent: 'created_at DESC, id ASC',
+  helpful: 'rating DESC, created_at DESC',
+  critical: 'rating ASC, created_at DESC',
+};
+
+/**
+ * Reviews for one product, newest first by default.
+ *
+ * Always paged. The busiest product in the dataset carries a few hundred
+ * reviews, and neither the product page nor a capability result has any use for
+ * all of them at once.
+ */
+export function listReviews(productId, query = {}) {
+  const order = REVIEW_SORTS[query.sort] || REVIEW_SORTS.recent;
+  const limit = Math.min(Math.max(Number(query.limit) || 10, 1), 100);
+  const page = Math.max(Number(query.page) || 1, 1);
+
+  const total = db
+    .prepare('SELECT COUNT(*) AS n FROM product_reviews WHERE product_id = ?')
+    .get(productId).n;
+
+  const items = db
+    .prepare(`SELECT * FROM product_reviews WHERE product_id = ? ORDER BY ${order} LIMIT ? OFFSET ?`)
+    .all(productId, limit, (page - 1) * limit)
+    .map((row) => ({
+      id: row.id,
+      author: row.author,
+      rating: row.rating,
+      body: row.body,
+      createdAt: row.created_at,
+    }));
+
+  return { items, total, page, pages: Math.max(Math.ceil(total / limit), 1) };
+}
+
+/**
+ * Average and star histogram for one product.
+ *
+ * The histogram is what makes a rating legible: 4.2 from a flat spread and 4.2
+ * from "mostly fives and a few ones" are different products, and a shopper
+ * asking "is this any good?" is really asking which of those it is.
+ */
+export function reviewSummary(productId) {
+  const rows = db
+    .prepare('SELECT rating, COUNT(*) AS n FROM product_reviews WHERE product_id = ? GROUP BY rating')
+    .all(productId);
+
+  const histogram = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  let total = 0;
+  let sum = 0;
+  for (const { rating, n } of rows) {
+    histogram[rating] = n;
+    total += n;
+    sum += rating * n;
+  }
+
+  return {
+    total,
+    average: total ? Number((sum / total).toFixed(2)) : null,
+    histogram,
+  };
 }
 
 export function listCategories() {

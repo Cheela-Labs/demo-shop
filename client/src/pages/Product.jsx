@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 
 import { api, money } from '../api';
 import ProductCard, { Rating } from '../components/ProductCard';
+import Reviews from '../components/Reviews';
 import { ArrowLeft, Shield, Truck } from '../components/Icons';
 import { useShop } from '../store';
 
@@ -44,7 +45,7 @@ export default function Product() {
     );
   }
 
-  const { product, related } = data;
+  const { product, related, reviews, reviewSummary } = data;
   const onSale = product.compareAtPrice && product.compareAtPrice > product.price;
   const stockTone = !product.inStock ? 'none' : product.stock <= 10 ? 'low' : '';
 
@@ -128,6 +129,8 @@ export default function Product() {
           </div>
         </div>
       </div>
+
+      <Reviews productId={product.id} summary={reviewSummary} initial={reviews} />
 
       {related.length > 0 && (
         <section style={{ marginTop: 64 }}>

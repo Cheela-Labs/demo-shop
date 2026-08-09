@@ -226,6 +226,47 @@ input.input:focus, select.select:focus, textarea.input:focus {
 .stock-line.none { color: var(--danger); }
 .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 
+/* ------------------------------- reviews ------------------------------- */
+
+.reviews { margin-top: 64px; }
+.reviews .muted { color: var(--muted); }
+
+.review-sorts { display: flex; gap: 16px; flex-wrap: wrap; }
+.review-sorts .btn.link { font-size: 14px; color: var(--muted); }
+.review-sorts .btn.link.is-active { color: var(--brand); text-decoration: underline; }
+
+.review-summary {
+  display: grid; grid-template-columns: auto 1fr; gap: 34px; align-items: center;
+  padding: 20px 22px; margin-bottom: 26px;
+  border: 1px solid var(--line); border-radius: 16px; background: #fff;
+}
+
+.review-average { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.review-average strong { font-size: 40px; line-height: 1; font-weight: 650; }
+.review-average .muted { font-size: 13px; }
+
+/* Stars sit on the baseline of whatever text they follow. */
+.review-stars { display: inline-flex; gap: 2px; color: #f59e0b; vertical-align: -2px; }
+
+.review-histogram { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.review-histogram-row { display: grid; grid-template-columns: 26px 1fr 38px; gap: 10px; align-items: center; }
+.review-histogram-label { font-size: 12.5px; color: var(--muted); }
+.review-histogram-track { height: 7px; border-radius: 4px; background: #f1f1f7; overflow: hidden; }
+.review-histogram-fill { display: block; height: 100%; border-radius: 4px; background: #f59e0b; }
+.review-histogram-count { font-size: 12.5px; color: var(--muted); text-align: right; }
+
+.review-list { list-style: none; display: flex; flex-direction: column; gap: 0; margin: 0 0 20px; padding: 0; }
+.review { padding: 16px 0; border-bottom: 1px solid var(--line); }
+.review:first-child { border-top: 1px solid var(--line); }
+.review p { margin: 7px 0 0; font-size: 14.5px; line-height: 1.6; }
+.review-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13.5px; }
+.review-author { font-weight: 600; }
+.review-head time { font-size: 13px; }
+
+@media (max-width: 700px) {
+  .review-summary { grid-template-columns: 1fr; gap: 20px; }
+}
+
 /* -------------------------------- cart -------------------------------- */
 
 .cart-layout { display: grid; grid-template-columns: 1fr 340px; gap: 34px; align-items: start; }

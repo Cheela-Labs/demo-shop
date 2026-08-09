@@ -9,11 +9,13 @@
  */
 
 import { createHash, randomUUID } from 'node:crypto';
+import { cpus } from 'node:os';
 import sharp from 'sharp';
 
 import { db, transaction, tableCount } from './db.js';
 import { registerUser } from './auth.js';
 import { products as catalog } from './products.js';
+import { loadDataset } from './dataset.js';
 import { renderProduct } from './svg.js';
 
 /** Widths shipped to the browser; the client picks via srcset. */
@@ -47,6 +49,14 @@ const upsertImage = db.prepare(`
 const currentHash = db.prepare(
   `SELECT hash FROM product_images WHERE product_id = ? AND format = 'png' AND size = ? LIMIT 1`,
 );
+
+const upsertReview = db.prepare(`
+  INSERT INTO product_reviews (id, product_id, author, rating, body, created_at)
+  VALUES (?, ?, ?, ?, ?, ?)
+  ON CONFLICT(id) DO UPDATE SET
+    product_id = excluded.product_id, author = excluded.author,
+    rating = excluded.rating, body = excluded.body, created_at = excluded.created_at
+`);
 
 function sha(buf) {
   return createHash('sha256').update(buf).digest('hex').slice(0, 32);
@@ -159,23 +169,148 @@ function seedDemoAddress(userId, log) {
   log('seed: demo address (Mumbai, default)');
 }
 
+function writeProducts(list) {
+  // One transaction per 500 rows rather than one per row. At 2,000 products the
+  // per-statement fsync is the entire cost of this step; batching takes it from
+  // seconds to milliseconds.
+  for (let i = 0; i < list.length; i += 500) {
+    const chunk = list.slice(i, i + 500);
+    transaction(() => {
+      for (const p of chunk) {
+        upsertProduct.run(
+          p.id, p.name, p.tagline, p.description, p.price, p.compareAtPrice ?? null,
+          p.category, JSON.stringify(p.tags ?? []), p.rating, p.reviews, p.stock,
+          p.featured ? 1 : 0, p.art, p.palette, JSON.stringify(p.specs ?? {}),
+        );
+      }
+    });
+  }
+}
+
+function writeReviews(reviews) {
+  const known = new Set(db.prepare('SELECT id FROM products').all().map((r) => r.id));
+
+  // A review whose product is missing would violate the foreign key and abort
+  // the whole batch, so orphans are dropped here rather than at the database.
+  const usable = reviews.filter((r) => known.has(r.productId));
+
+  for (let i = 0; i < usable.length; i += 1000) {
+    const chunk = usable.slice(i, i + 1000);
+    transaction(() => {
+      for (const r of chunk) {
+        upsertReview.run(r.id, r.productId, r.author, r.rating, r.body, r.createdAt);
+      }
+    });
+  }
+
+  return { written: usable.length, orphaned: reviews.length - usable.length };
+}
+
+/**
+ * Recomputes products.rating / products.reviews from the review table.
+ *
+ * The CSV carries its own rating column, but once reviews are loaded the two
+ * can disagree, and the number under a product page has to be the average of
+ * the reviews printed on that same page. Products with no reviews keep the
+ * rating they came with — a fresh product is not a zero-star product.
+ */
+function recomputeAggregates() {
+  transaction(() => {
+    db.exec(`
+      UPDATE products SET
+        rating  = COALESCE((SELECT ROUND(AVG(rating), 2) FROM product_reviews WHERE product_id = products.id), rating),
+        reviews = COALESCE((SELECT COUNT(*)              FROM product_reviews WHERE product_id = products.id), 0)
+    `);
+  });
+}
+
+/**
+ * Promotes a handful of well-reviewed dataset products onto the home page.
+ *
+ * The curated 16 set `featured` themselves and are left alone. Without this the
+ * home page would show only those 16 no matter how large the catalogue grows,
+ * which rather defeats the point of loading 2,000 more.
+ */
+function assignFeatured(limit = 12) {
+  transaction(() => {
+    db.exec("UPDATE products SET featured = 0 WHERE id LIKE 'd-%'");
+    db.prepare(`
+      UPDATE products SET featured = 1 WHERE id IN (
+        SELECT id FROM products
+        WHERE id LIKE 'd-%' AND stock > 0 AND reviews >= 20
+        ORDER BY rating DESC, reviews DESC LIMIT ?
+      )
+    `).run(limit);
+  });
+}
+
+/**
+ * Rasterises `list` with a bounded worker pool.
+ *
+ * Each product renders its three sizes in parallel already, but the products
+ * themselves used to run one at a time — fine for 16, about twenty minutes for
+ * 2,000. sharp releases the event loop while libvips works, so the only thing
+ * needed is more than one in flight. The pool is capped at the core count:
+ * libvips runs its own threads underneath, and oversubscribing makes it slower,
+ * not faster.
+ */
+async function rasteriseAll(list, { force, log }) {
+  const concurrency = Math.max(2, Math.min(cpus().length, 12));
+  const started = Date.now();
+  let cursor = 0;
+  let rendered = 0;
+  let done = 0;
+  let nextReport = 250;
+
+  async function worker() {
+    while (cursor < list.length) {
+      const product = list[cursor];
+      cursor += 1;
+      // Held in a local first: `rendered += await …` reads the counter *before*
+      // suspending, so every worker in flight would write back a stale value.
+      const n = await buildImages(product, { force });
+      rendered += n;
+      done += 1;
+
+      if (done >= nextReport) {
+        nextReport += 250;
+        const elapsed = (Date.now() - started) / 1000;
+        const rate = done / Math.max(elapsed, 0.001);
+        log(
+          `seed: ${done}/${list.length} products, ${rendered} PNGs, ` +
+          `${elapsed.toFixed(0)}s elapsed, ~${Math.round((list.length - done) / rate)}s left`,
+        );
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: concurrency }, worker));
+  return rendered;
+}
+
 export async function seed({ force = false, quiet = false } = {}) {
   const log = quiet ? () => {} : (msg) => console.log(msg);
 
-  transaction(() => {
-    for (const p of catalog) {
-      upsertProduct.run(
-        p.id, p.name, p.tagline, p.description, p.price, p.compareAtPrice ?? null,
-        p.category, JSON.stringify(p.tags ?? []), p.rating, p.reviews, p.stock,
-        p.featured ? 1 : 0, p.art, p.palette, JSON.stringify(p.specs ?? {}),
-      );
-    }
-  });
+  const dataset = loadDataset();
+  // The curated 16 come last so that on an id collision their hand-written copy
+  // wins over anything generated.
+  const all = [...dataset.products, ...catalog];
 
-  let rasterised = 0;
-  for (const p of catalog) {
-    rasterised += await buildImages(p, { force });
+  writeProducts(all);
+
+  if (dataset.present) {
+    const { written, orphaned } = writeReviews(dataset.reviews);
+    recomputeAggregates();
+    assignFeatured();
+    log(
+      `seed: dataset loaded — ${dataset.products.length} products, ${written} reviews` +
+      (orphaned ? `, ${orphaned} orphaned reviews skipped` : ''),
+    );
+  } else {
+    log('seed: no dataset CSVs found — run `npm run dataset` for the full catalogue');
   }
+
+  const rasterised = await rasteriseAll(all, { force, log });
 
   const stored = db
     .prepare(`SELECT COUNT(*) AS n, COALESCE(SUM(bytes), 0) AS b FROM product_images WHERE format = 'png'`)
@@ -184,7 +319,7 @@ export async function seed({ force = false, quiet = false } = {}) {
   seedDemoAccount(log);
 
   log(
-    `seed: ${tableCount('products')} products, ` +
+    `seed: ${tableCount('products')} products, ${tableCount('product_reviews')} reviews, ` +
       `${stored.n} PNGs in db (${(stored.b / 1024 / 1024).toFixed(2)} MB)` +
       (rasterised ? `, ${rasterised} freshly rasterised` : ', artwork up to date'),
   );

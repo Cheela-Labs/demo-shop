@@ -50,10 +50,21 @@ COPY . .
 
 RUN npm run build --workspace client
 
+# The bulk catalogue. `server/data` is in .dockerignore — the host's copy would
+# drag a developer's database along with it — so the CSVs are generated here
+# rather than copied. The generator is seeded, so this produces the same 2,000
+# products on every build and the layer cache stays useful.
+RUN node scripts/generate-dataset.mjs
+
 # Seed at build time rather than on boot. `index.js` calls `seed()` before it
-# listens, and a cold start that has to rasterise 48 PNGs does it in front of
-# the startup probe. Seeding is hash-checked, so the call at boot then finds
+# listens, and a cold start that has to rasterise the catalogue would do it in
+# front of the startup probe. Seeding is hash-checked, so the call at boot finds
 # the artwork up to date and returns immediately.
+#
+# This is the slow step: 2,000 products x 3 sizes is ~6,000 PNGs and roughly
+# 200 MB of SQLite baked into the image. It runs a worker pool sized to the
+# build machine, so expect single-digit minutes on a many-core host and
+# considerably worse on a small one.
 RUN node server/src/seed.js
 
 # Drops vite, esbuild, typescript and @cheela/cli. The CLI is only ever run

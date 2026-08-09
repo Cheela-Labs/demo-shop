@@ -167,6 +167,33 @@ CREATE TABLE IF NOT EXISTS order_items (
 );
 
 CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);
+
+-- Customer-written reviews, loaded in bulk from the dataset CSVs.
+--
+-- The author column is denormalised rather than a users(id) reference: these
+-- are dataset rows, not shop accounts, and joining them to the table that holds
+-- real sign-ins and password hashes would put synthetic people in the account
+-- system. products.rating / products.reviews stay as denormalised aggregates
+-- over this table, recomputed at seed time — the catalogue sorts and filters on
+-- them on every request, and a COUNT/AVG per row does not survive 2,000
+-- products.
+CREATE TABLE IF NOT EXISTS product_reviews (
+  id          TEXT    PRIMARY KEY,
+  product_id  TEXT    NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  author      TEXT    NOT NULL DEFAULT 'Verified buyer',
+  rating      INTEGER NOT NULL,
+  body        TEXT    NOT NULL,
+  created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_reviews_product ON product_reviews(product_id, rating DESC);
+CREATE INDEX IF NOT EXISTS idx_reviews_recent  ON product_reviews(product_id, created_at DESC);
+
+-- The catalogue is searched by name far more than anything else, and at 2,000+
+-- rows an unindexed prefix scan is the difference between a snappy list and a
+-- visible pause. LIKE '%x%' cannot use this, but the ORDER BY clauses can.
+CREATE INDEX IF NOT EXISTS idx_products_rating ON products(rating DESC, reviews DESC);
+CREATE INDEX IF NOT EXISTS idx_products_price  ON products(price);
 `);
 
 /**

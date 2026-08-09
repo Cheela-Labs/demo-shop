@@ -72,7 +72,21 @@ api.get('/categories', (_req, res) => res.json({ items: repo.listCategories() })
 api.get('/products/:id', (req, res) => {
   const product = repo.getProduct(req.params.id);
   if (!product) return res.status(404).json({ error: 'Product not found' });
-  return res.json({ product, related: repo.relatedProducts(req.params.id) });
+  return res.json({
+    product,
+    related: repo.relatedProducts(req.params.id),
+    reviews: repo.listReviews(req.params.id, { limit: 5 }),
+    reviewSummary: repo.reviewSummary(req.params.id),
+  });
+});
+
+/** Paged reviews, so the product page can go past the first five. */
+api.get('/products/:id/reviews', (req, res) => {
+  if (!repo.getProduct(req.params.id)) return res.status(404).json({ error: 'Product not found' });
+  return res.json({
+    ...repo.listReviews(req.params.id, req.query),
+    summary: repo.reviewSummary(req.params.id),
+  });
 });
 
 /**
