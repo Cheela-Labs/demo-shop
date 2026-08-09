@@ -6,6 +6,7 @@
 import {
   extractActions, isSafeActionUrl, MAX_ACTIONS_PER_RESULT,
   extractPending, isSettled, MIN_POLL_INTERVAL_MS, MAX_POLL_TIMEOUT_MS,
+  extractCards, MAX_CARDS_PER_RESULT,
 } from '@cheela/protocol';
 import runtime from '../server/.cheela/runtime.ts';
 import * as repo from '../server/src/repo.js';
@@ -105,7 +106,104 @@ check('a settled order reports settled', isSettled(afterPay) === true,
 check('settled means "stop polling", not "paid"',
   afterPay.status !== 'pending_payment', afterPay.status);
 
+/* ------------------------------ product cards ----------------------------
+ * Protocol 0.5. The catalogue capabilities describe what the shopper should
+ * see, so a search result arrives as pictures and prices rather than as
+ * whatever the model chose to retype about them.
+ *
+ * Through `extractCards` for the third time for the same reason: it is the
+ * function `renderMessage` calls, and it drops a malformed card silently. A
+ * card this shop got subtly wrong would simply not appear, and nothing in the
+ * output would say so.
+ */
+console.log(`\n  MAX_CARDS_PER_RESULT = ${MAX_CARDS_PER_RESULT}`);
+
+// Ask for far more than the protocol will render, to prove the runtime clips
+// its own payload rather than shipping 24 cards for the 6 that get drawn.
+const browse = await call('catalog-search-products', { limit: 24 });
+const cards = extractCards(browse);
+
+/*
+ * Whether the storefront is reachable over https decides how much of a card
+ * survives, and both are legitimate: a fresh clone runs on http://localhost,
+ * and `.env` here points at a tunnel. So assert the rule rather than one
+ * side of it — the card itself renders either way, and only its link and
+ * picture depend on the scheme. This is the difference from actions, which
+ * vanish entirely without https because an action is nothing but its URL.
+ */
+const secure = isSafeActionUrl(browse.items[0].productUrl);
+
+check('search renders cards', cards.length > 0, JSON.stringify(browse.cheela)?.slice(0, 120));
+check('every card is a product card', cards.every((c) => c.type === 'product'));
+check('every card has the one field it cannot do without',
+  cards.every((c) => typeof c.title === 'string' && c.title.length > 0));
+check('the runtime clips to MAX_CARDS_PER_RESULT rather than leaving it to the widget',
+  browse.cheela.cards.length <= MAX_CARDS_PER_RESULT, `sent ${browse.cheela.cards.length}`);
+check('more matched than were shown', browse.total > cards.length, `total=${browse.total}`);
+check('the cards are the first results, in order',
+  cards.every((c, i) => c.title === browse.items[i].name));
+check('the price is preformatted by the runtime, not a number for the widget to guess at',
+  cards.every((c) => typeof c.price === 'string' && c.price.includes('₹')), cards[0]?.price);
+check('a card links to its product page only when that page is https',
+  cards.every((c) => (c.url !== undefined) === secure), `https storefront: ${secure}`);
+check('a card carries a picture only when it is https',
+  cards.every((c) => (c.image !== undefined) === isSafeActionUrl(browse.items[0].imageUrl)));
+// The runtime sends no `alt` and the extractor normalises that to `""`, which
+// is what marks an image decorative. Right here: the title sits beside the
+// picture, so a screen reader reading the product name twice is noise.
+check('the picture is marked decorative — the title beside it already names the product',
+  cards.every((c) => c.image === undefined || c.image.alt === ''),
+  JSON.stringify(cards[0]?.image));
+
+// Cards and buttons share one envelope: a shortlist, and a way to see the rest.
+const browseActions = extractActions(browse);
+check('a "see all" button rides alongside the cards',
+  browseActions.length === (secure ? 1 : 0), JSON.stringify(browseActions));
+if (secure) {
+  check('it says how many results there are',
+    browseActions[0].label.includes(String(browse.total)), browseActions[0].label);
+}
+
+// A budget search cannot be reproduced as a URL — /shop has no price filter —
+// so the button must not promise a count the page behind it will not honour.
+const bounded = await call('catalog-search-products', { maxPriceCents: 2000000, limit: 24 });
+const boundedActions = extractActions(bounded);
+check('a price-bounded search does not promise a result count it cannot honour',
+  boundedActions.every((x) => !/\d/.test(x.label)), JSON.stringify(boundedActions.map((x) => x.label)));
+
+const detail = await call('catalog-get-product', { productId: browse.items[0].id });
+const detailCards = extractCards(detail);
+check('get-product renders exactly one card', detailCards.length === 1, JSON.stringify(detailCards));
+check('it is the product asked about, not one of the related ones',
+  detailCards[0]?.title === detail.product.name, detailCards[0]?.title);
+check('the related products are left for the model rather than put on screen',
+  detail.related.length > 0 && detailCards.length === 1, `related=${detail.related.length}`);
+
+/*
+ * The failure modes, which are scoped more tightly than an action's.
+ *
+ * An action IS its URL, so an unsafe one leaves nothing to render and the
+ * action goes. A card is a product: the name and the price survive a link
+ * that cannot be opened, so the URL is stripped and the card stays.
+ */
+const hostile = extractCards({ cheela: { cards: [
+  { type: 'product', title: 'Kept, minus its link', price: '₹1,499', url: 'javascript:alert(1)' },
+  { type: 'product', title: 'Kept, minus its picture', image: { url: 'http://cdn/x.png' } },
+  { type: 'product', price: '₹99' },
+  { type: 'link', title: 'Not a product card' },
+] } });
+check('an unsafe card url is stripped and the card survives',
+  hostile[0]?.title === 'Kept, minus its link' && hostile[0]?.url === undefined,
+  JSON.stringify(hostile[0]));
+check('an unsafe image is dropped and the card survives',
+  hostile[1]?.title === 'Kept, minus its picture' && hostile[1]?.image === undefined,
+  JSON.stringify(hostile[1]));
+check('a card with no title is dropped — there would be nothing to read',
+  hostile.length === 2, JSON.stringify(hostile.map((c) => c.title)));
+
 console.log(`\n  rendered button: "${a.label}" -> ${a.url}`);
 console.log(`  polls ${pending?.capability} every ${pending?.intervalMs}ms for up to ${pending?.timeoutMs}ms`);
+console.log(`  rendered ${cards.length} of ${browse.total} matches as cards` +
+  `${cards[0] ? `, first: "${cards[0].title}" ${cards[0].price}` : ''}`);
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

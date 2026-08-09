@@ -361,8 +361,8 @@ input.input:focus, select.select:focus, textarea.input:focus {
 .chat-msg--assistant, .chat-msg--tool {
   align-self: flex-start; background: #f3f3f8; border-bottom-left-radius: 5px;
 }
-/* A tool message reaches the log only when it carries action buttons — there
-   is no bubble to draw around them. */
+/* A tool message reaches the log only when it carries action buttons or product
+   cards — both draw their own surface, so there is no bubble around them. */
 .chat-msg--tool { background: none; padding: 0; max-width: 100%; }
 
 .chat-msg > :first-child { margin-top: 0; }
@@ -371,11 +371,11 @@ input.input:focus, select.select:focus, textarea.input:focus {
 .chat-msg ul, .chat-msg ol { margin: 0 0 8px; padding-left: 20px; }
 .chat-msg li { margin-bottom: 3px; }
 .chat-msg h1, .chat-msg h2, .chat-msg h3 { font-size: 15px; margin: 0 0 6px; }
-/* Prose links only. Action buttons are anchors too, and they live inside a
-   bubble, so an unqualified `.chat-msg a` would out-specify their own styling
-   below and leave the pay button underlined and the wrong colour. */
-.chat-msg a:not(.cheela-chat__action) { text-decoration: underline; }
-.chat-msg--assistant a:not(.cheela-chat__action) { color: var(--brand); }
+/* Prose links only. Action buttons and product cards are anchors too, and they
+   live inside a bubble, so an unqualified `.chat-msg a` would out-specify their
+   own styling below and leave the pay button underlined and the wrong colour. */
+.chat-msg a:not(.cheela-chat__action, .cheela-chat__card) { text-decoration: underline; }
+.chat-msg--assistant a:not(.cheela-chat__action, .cheela-chat__card) { color: var(--brand); }
 .chat-msg code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.88em;
   background: rgba(20, 20, 43, 0.07); padding: 1px 5px; border-radius: 5px;
@@ -392,14 +392,21 @@ input.input:focus, select.select:focus, textarea.input:focus {
 .chat-msg table { border-collapse: collapse; font-size: 13px; margin: 0 0 8px; }
 .chat-msg th, .chat-msg td { border: 1px solid var(--line); padding: 4px 8px; text-align: left; }
 .chat-msg hr { border: 0; border-top: 1px solid var(--line); margin: 8px 0; }
-.chat-msg img { border-radius: 8px; margin: 2px 0; }
+/* Prose images only, for the same reason as the link rule above: a card's
+   thumbnail fills a fixed box, and the margin here would push it past the
+   edges of that box. */
+.chat-msg img:not(.cheela-chat__card-image) { border-radius: 8px; margin: 2px 0; }
 
 /* Action buttons.
-   These class names come from `renderActions` in @cheela/web-component, which
+   These class names come from `renderMessage` in @cheela/web-component, which
    builds the buttons so the https-only rule is enforced in one tested place —
-   see Assistant.jsx. The markup is theirs; the look is the shop's. */
+   see Assistant.jsx. The markup is theirs; the look is the shop's.
+
+   The gap above is left to `.chat-msg > :first-child`, which zeroes it when the
+   buttons open the bubble — a tool message carrying nothing else. It used to be
+   reset on `.chat-msg--tool` outright, which was true until cards arrived and
+   put something above the buttons in exactly that message. */
 .cheela-chat__actions { display: flex; flex-direction: column; gap: 7px; margin-top: 9px; }
-.chat-msg--tool .cheela-chat__actions { margin-top: 0; }
 .cheela-chat__action {
   display: block; padding: 10px 14px; border-radius: 10px;
   border: 1px solid var(--line); background: var(--surface); color: var(--ink);
@@ -414,6 +421,44 @@ input.input:focus, select.select:focus, textarea.input:focus {
 .cheela-chat__action-label { display: block; font-weight: 600; font-size: 14px; }
 .cheela-chat__action-description {
   display: block; margin-top: 2px; font-size: 12px; opacity: 0.75;
+}
+
+/* Product cards (protocol 0.5).
+   Same arrangement as the buttons above: the markup and the https-only rule
+   come from `renderMessage`, the look is the shop's. These arrive on a
+   `tool` message, which is already full width and has no bubble drawn around
+   it — so the card is the surface, and carries its own border.
+
+   Styled to work in any bubble regardless, rather than relying on that: a
+   card that turned up on an assistant message should still look like a card
+   and not inherit the bubble's grey. */
+.cheela-chat__cards { display: flex; flex-direction: column; gap: 8px; margin-top: 9px; }
+.cheela-chat__card {
+  display: flex; align-items: center; gap: 12px; padding: 10px;
+  border: 1px solid var(--line); border-radius: 12px;
+  background: var(--surface); color: var(--ink); text-align: left;
+  transition: background 0.15s, border-color 0.15s, transform 0.05s;
+}
+a.cheela-chat__card:hover { background: #f7f7fb; border-color: #d5d5e4; }
+a.cheela-chat__card:active { transform: translateY(1px); }
+/* Fixed box so a row of cards lines up whatever each picture's aspect ratio
+   is, and so the text does not reflow as the images arrive. */
+.cheela-chat__card-media {
+  flex: none; width: 56px; height: 56px; border-radius: 8px;
+  overflow: hidden; background: #f3f3f8;
+}
+.cheela-chat__card-image { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* min-width: 0 lets a long product name ellipsise instead of forcing the
+   flex row wider than the panel. */
+.cheela-chat__card-body { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.cheela-chat__card-title {
+  font-weight: 600; font-size: 14px; line-height: 1.35;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cheela-chat__card-price { font-size: 13.5px; color: var(--ink); }
+.cheela-chat__card-description {
+  font-size: 12px; color: var(--muted); line-height: 1.4;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
 .chat-thinking { display: flex; gap: 4px; align-items: center; padding: 13px; }

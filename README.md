@@ -52,14 +52,14 @@ demo@cheela.shop  /  demo-password-1234
 npm run smoke            # 48 — REST API, end to end, against a running server
 npm run smoke:cheela     # 35 — capabilities and the auth boundary, in-process
 npm run smoke:cart       # 13 — the assistant and the browser tab share one cart
-npm run smoke:actions    # 20 — the pay button renders, and the payment poll
+npm run smoke:actions    # 39 — the pay button, the payment poll, product cards
 npm run smoke:addresses  # 17 — address book, including cross-account isolation
 npm run smoke:sandbox    # 16 — payment pass/fail, no network to Razorpay
 npm run smoke:razorpay   # 20 — signature tampering and webhook settlement
 npm run typecheck        # the .cheela TypeScript
 ```
 
-169 checks. None of them need a Razorpay account or a Cheela API key.
+188 checks. None of them need a Razorpay account or a Cheela API key.
 
 ---
 
@@ -185,6 +185,20 @@ own UI actions (`cheela.actions`), so the pay button doesn't depend on the model
 repeat a long signed URL without mangling it. Action URLs must be `https:` — `http:` is
 rejected, since these links carry payment sessions.
 
+### Nobody buys a bag from a paragraph
+
+The same argument, applied to the things shoppers actually look at before buying them.
+`catalog-search-products` and `catalog-get-product` attach `cheela.cards` (protocol 0.5), so
+the matches arrive as **product cards — picture, name, price, link** — instead of whatever
+prose the model chose to write about them. Prices are formatted by the runtime, which knows
+the currency, rather than retyped from the model's memory of the tool result.
+
+The capability descriptions were rewritten to match: the model is told the cards are already
+on screen, so it compares and recommends rather than relisting six names and prices the
+shopper can see. Underneath the shortlist sits one button to the equivalent `/shop` search —
+worded neutrally for a budget search, because `/shop` has no price filter and the count would
+be a promise the page cannot keep. `INTEGRATION.md` §16 has the details.
+
 ### One cart, not two
 
 The assistant has no access to `localStorage`, so the naive integration fills a cart the
@@ -200,10 +214,11 @@ headless half of `@cheela/web-component` — `getSession` owns the conversation,
 client and the streaming; the panel, bubbles and composer are written here so the chat
 matches the storefront instead of a shadow root that its stylesheet cannot reach.
 
-Two things stay borrowed on purpose: `renderMarkdown`, which builds model prose as DOM nodes
-rather than a markup string, and `renderActions`, which drops any action URL that is not
-`https:` — the rule that keeps `javascript:` in a capability's output from becoming stored
-XSS on this domain. `INTEGRATION.md` §14 has the full reasoning.
+What stays borrowed on purpose is `renderMessage`, which builds everything inside a bubble:
+model prose as DOM nodes rather than a markup string, and product cards and action buttons
+whose URLs it drops unless they are `https:` — the rule that keeps `javascript:` in a
+capability's output from becoming stored XSS on this domain. `INTEGRATION.md` §14 has the
+full reasoning.
 
 ---
 

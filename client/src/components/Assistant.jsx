@@ -26,8 +26,7 @@ import {
   DEFAULT_SESSION,
   DEFAULT_WAITING_LABEL,
   getSession,
-  renderActions,
-  renderMarkdown,
+  renderMessage,
 } from '@cheela/web-component/headless';
 
 import { getToken } from '../api';
@@ -42,12 +41,14 @@ const PINNED_PX = 32;
 /**
  * Workaround for an upstream bug in @cheela/client.
  *
- * Still required on @cheela/client@0.5.0, which @cheela/web-component@0.3.0
+ * Still required on @cheela/client@0.7.0, which @cheela/web-component@0.5.0
  * pins *exactly* — so dropping @cheela/ui did not drop the bug with it.
  * Re-checked at that version: `createChatController` builds the client itself
  * with `new ExecutionClient({ apiKey, baseUrl, endUserToken })`, and
  * `ControllerConfig` has no `fetchImpl` among its fields, so there is still
- * nowhere to inject a bound copy. Re-check on the next release.
+ * nowhere to inject a bound copy. The client's own `ExecutionClient` accepts
+ * one — `this.fetchImpl = options.fetchImpl ?? fetch` — but nothing that builds
+ * it here passes one through. Re-check on the next release.
  *
  * Its ExecutionClient stores the global fetch on the instance
  * (`this.fetchImpl = options.fetchImpl ?? fetch`) and later calls
@@ -151,34 +152,38 @@ function explain(error) {
   return { shopper: 'The assistant hit a problem. Try again in a moment.', developer: raw };
 }
 
-/** The text parts of a message, joined — the same rule the package's renderers use. */
-function textOf(message) {
-  return message.parts
-    .filter((part) => part.type === 'text')
-    .map((part) => part.content)
-    .join('\n');
-}
-
 /**
  * One message in the transcript.
  *
  * The bubble is ours; its contents are built by `@cheela/web-component` and
  * adopted into it. That split is deliberate. Everything inside a bubble is
  * written by a model, steered by tool results this shop does not fully control,
- * and rendered on a page that also holds a signed-in session — so the two
- * functions that decide what is allowed through are the two worth taking from a
- * package that is tested on them rather than re-deriving here:
+ * and rendered on a page that also holds a signed-in session — so the code that
+ * decides what is allowed through is worth taking from a package that is tested
+ * on it rather than re-deriving here. `renderMessage` composes the three
+ * renderers that matter:
  *
- *   - `renderMarkdown` walks the parsed tree building DOM nodes, so no markup
+ *   - markdown is walked as a parsed tree building DOM nodes, so no markup
  *     string is ever assembled and there is no sanitiser to keep ahead of.
- *   - `renderActions` drops any action URL that is not `https:`, which is what
- *     stops `javascript:` in a capability's output becoming stored XSS on this
+ *   - product cards (protocol 0.5) drop an image URL that is not `https:`, and
+ *     drop the frame entirely if the picture 404s at render time.
+ *   - actions drop any URL that is not `https:`, which is what stops
+ *     `javascript:` in a capability's output becoming stored XSS on this
  *     domain, against this shop's own customers.
  *
- * Both hand back detached DOM, so the nodes are attached in an effect. They are
- * rebuilt on every run rather than memoised: a DocumentFragment is emptied by
- * the insertion, so a re-run holding the previous one would blank the message —
- * which is exactly what StrictMode's second pass would do.
+ * Only the composed `renderMessage` is taken, rather than the three separately:
+ * `renderCards` is exported from the package's own `core/render`, but 0.5.0
+ * forgot to re-export it from `/headless`, so it cannot be imported here
+ * without reaching into `dist/`. Composing it ourselves would buy nothing
+ * anyway — the order it uses (prose, then products, then buttons) is the order
+ * this panel wants.
+ *
+ * What it returns is a whole bubble of its own, carrying the package's class
+ * names. Its *children* are adopted and the wrapper dropped, so the shop keeps
+ * its own bubble and its own CSS. It hands back detached DOM, so the nodes are
+ * attached in an effect, and it is re-run rather than memoised: the nodes are
+ * moved by the insertion, so a re-run holding the previous ones would blank the
+ * message — which is exactly what StrictMode's second pass would do.
  */
 function Bubble({ message }) {
   const host = useRef(null);
@@ -187,18 +192,13 @@ function Bubble({ message }) {
     const node = host.current;
     if (!node) return;
 
-    const content = [];
-    const text = textOf(message);
-    if (text) content.push(renderMarkdown(text));
-    const actions = renderActions(message);
-    if (actions) content.push(actions);
-
-    node.replaceChildren(...content);
+    const built = renderMessage(message);
+    node.replaceChildren(...(built ? built.childNodes : []));
     // A turn carries messages a shopper has no business seeing — the model's
-    // bare tool_call, or a tool_result with no actions in it. They belong in
-    // the transcript but have nothing to draw, so the bubble takes itself out
-    // rather than leaving an empty box in the log.
-    node.hidden = content.length === 0;
+    // bare tool_call, or a tool_result with nothing renderable in it. They
+    // belong in the transcript but have nothing to draw, so the bubble takes
+    // itself out rather than leaving an empty box in the log.
+    node.hidden = built === null;
   }, [message]);
 
   return <div className={`chat-msg chat-msg--${message.role}`} ref={host} />;

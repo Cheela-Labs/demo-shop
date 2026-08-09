@@ -33,7 +33,7 @@
 import { createAction, createCapability } from '@cheela/sdk';
 import type { Action, ActionContext, Capability } from '@cheela/sdk';
 import type { Runtime } from '@cheela/runtime';
-import { isSafeActionUrl } from '@cheela/protocol';
+import { MAX_CARDS_PER_RESULT, isSafeActionUrl } from '@cheela/protocol';
 import { z } from 'zod';
 
 import * as repoModule from '../src/repo.js';
@@ -245,7 +245,7 @@ function requireShopper(context: ActionContext) {
   return user;
 }
 
-/* ------------------------------- ui actions ------------------------------ */
+/* -------------------------- ui actions and cards ------------------------- */
 
 /**
  * Buttons the chat panel renders from a capability result.
@@ -266,6 +266,33 @@ const linkActions = z.array(z.object({
 }));
 
 const actionsShape = z.object({ actions: linkActions }).optional();
+
+/**
+ * `cheela.cards` — protocol 0.5, and the same argument as actions applied to
+ * the things people actually look at before they buy them.
+ *
+ * A search capability returns products. Until now the shopper saw whatever
+ * prose the model chose to write about them: no picture, prices retyped from
+ * memory, and whichever item it happened to like listed first. For a shop that
+ * is the whole product — nobody buys a bag from a paragraph describing it.
+ *
+ * `title` is the only field a card cannot do without. `price` is deliberately a
+ * preformatted string: this runtime knows the currency and the locale, and the
+ * widget rendering it knows neither.
+ */
+const productCards = z.array(z.object({
+  type: z.literal('product'),
+  title: z.string(),
+  description: z.string().optional(),
+  price: z.string().optional(),
+  image: z.object({
+    url: z.string(),
+    alt: z.string().optional(),
+  }).optional(),
+  url: z.string().optional(),
+}));
+
+const cardsShape = z.object({ cards: productCards }).optional();
 
 /**
  * `cheela.pending` — protocol 0.4's answer to work that finishes elsewhere.
@@ -334,6 +361,64 @@ function cheelaActions(...candidates: LinkActionInput[]) {
     }));
 
   return actions.length ? { actions } : undefined;
+}
+
+/**
+ * Builds the `cheela.cards` block from product summaries.
+ *
+ * Unsafe URLs are handled differently here than in `cheelaActions`, because the
+ * protocol treats them differently. An action *is* its URL, so a rejected one
+ * leaves nothing to render and the action is dropped. A card is a product, and
+ * most of what a shopper wants from it — the name, the price, the picture —
+ * survives a link that cannot be opened. So the URL is stripped and the card
+ * stays, which is also why cards still render on an `http://localhost`
+ * storefront where the buttons do not.
+ *
+ * The cap is the protocol's own `MAX_CARDS_PER_RESULT`. Slicing here rather
+ * than leaving it to the widget keeps the payload honest: a `limit: 24` search
+ * would otherwise put 24 cards on the wire for the six that get drawn.
+ *
+ * No `alt` text, deliberately. The protocol defaults it to empty, marking the
+ * image decorative, and that is right when the title sits directly beside the
+ * picture — a screen reader reading "image of Aurora Over-Ear" next to the
+ * words "Aurora Over-Ear" is noise, not access.
+ */
+function cheelaCards(items: ReturnType<typeof toSummary>[]) {
+  const cards = items.slice(0, MAX_CARDS_PER_RESULT).map((p) => ({
+    type: 'product' as const,
+    title: p.name,
+    description: p.tagline,
+    price: p.price,
+    ...(isSafeActionUrl(p.imageUrl) ? { image: { url: p.imageUrl } } : {}),
+    ...(isSafeActionUrl(p.productUrl) ? { url: p.productUrl } : {}),
+  }));
+
+  return cards.length ? { cards } : undefined;
+}
+
+/**
+ * The storefront URL that reproduces a catalogue search.
+ *
+ * Only the parameters `/shop` actually reads — see `Catalog.jsx`, which takes
+ * `q`, `category`, `sort` and `inStock`. Price bounds are deliberately absent
+ * because the page has no control for them; the caller checks for that and
+ * words the button accordingly rather than linking to a page that quietly drops
+ * the shopper's budget.
+ */
+function searchUrl(input: {
+  query?: string;
+  category?: string;
+  sort?: string;
+  inStockOnly?: boolean;
+}) {
+  const params = new URLSearchParams();
+  if (input.query) params.set('q', input.query);
+  if (input.category) params.set('category', input.category);
+  if (input.sort) params.set('sort', input.sort);
+  if (input.inStockOnly) params.set('inStock', 'true');
+
+  const query = params.toString();
+  return `${SHOP_URL}/shop${query ? `?${query}` : ''}`;
 }
 
 /* ----------------------------- shared shapes ----------------------------- */
@@ -559,8 +644,10 @@ export const searchProducts = defineCapability(
     name: 'catalog-search-products',
     description:
       'Search and filter the product catalogue. Use this for any question about what is for sale, ' +
-      'what is available in a category, what is on sale, or what fits a budget.',
-    version: '1.1.0',
+      'what is available in a category, what is on sale, or what fits a budget. ' +
+      'The matches are shown to the shopper as product cards automatically, pictures and prices ' +
+      'included — so summarise or compare them rather than relisting every name and price.',
+    version: '1.2.0',
     input: z.object({
       query: z.string().optional().describe('Free-text search over name, tagline, description and tags'),
       category: z.enum(['Accessories', 'Audio', 'Bags', 'Footwear', 'Home', 'Outdoors', 'Tech'])
@@ -580,6 +667,10 @@ export const searchProducts = defineCapability(
       total: z.number().int().describe('Total matches, not just this page'),
       page: z.number().int(),
       pages: z.number().int(),
+      cheela: z.object({
+        cards: productCards,
+        actions: linkActions.optional(),
+      }).optional(),
     }),
   }),
   createAction({
@@ -596,11 +687,44 @@ export const searchProducts = defineCapability(
         limit: input.limit ?? 8,
         page: input.page ?? 1,
       });
+
+      const items = result.items.map(toSummary);
+      const cards = cheelaCards(items);
+
+      /*
+       * The button under the shortlist, and the one place this is allowed to
+       * lie. `/shop` filters on query, category, sort and stock but has no
+       * price parameter, so a budget search cannot be reproduced as a URL — the
+       * page behind "See all 14 results" would show every price. Promising a
+       * count the link cannot honour is worse than not promising one, so a
+       * price-bounded search gets the neutral label instead.
+       *
+       * `MAX_CARDS_PER_RESULT` rather than `items.length` is the honest
+       * comparison for what is hidden: the shopper sees at most that many cards
+       * whatever `limit` asked for.
+       */
+      const bounded = input.minPriceCents !== undefined || input.maxPriceCents !== undefined;
+      const hidden = result.total - Math.min(items.length, MAX_CARDS_PER_RESULT);
+
       return {
-        items: result.items.map(toSummary),
+        items,
         total: result.total,
         page: result.page,
         pages: result.pages,
+        ...(cards
+          ? {
+            cheela: {
+              ...cards,
+              ...cheelaActions({
+                label: hidden > 0 && !bounded
+                  ? `See all ${result.total} results`
+                  : 'Open in the shop',
+                url: searchUrl(input),
+                style: 'secondary',
+              }),
+            },
+          }
+          : {}),
       };
     },
   }),
@@ -611,8 +735,10 @@ export const getProduct = defineCapability(
     name: 'catalog-get-product',
     description:
       'Full detail for one product: description, specifications, stock level and related items. ' +
-      'Call this before adding something to the cart if the shopper asked about specifics.',
-    version: '1.1.0',
+      'Call this before adding something to the cart if the shopper asked about specifics. ' +
+      'The product is shown to the shopper as a card with its picture and price, so answer what ' +
+      'they asked rather than reciting the name and price back at them.',
+    version: '1.2.0',
     input: z.object({
       productId: z.string().describe('Product id, e.g. "aurora-over-ear"'),
     }),
@@ -623,6 +749,7 @@ export const getProduct = defineCapability(
         tags: z.array(z.string()),
       }),
       related: z.array(productSummary),
+      cheela: cardsShape,
     }),
   }),
   createAction({
@@ -635,14 +762,22 @@ export const getProduct = defineCapability(
           `No product with id "${input.productId}". Use catalog-search-products to find valid ids.`,
         );
       }
+      const summary = toSummary(product);
+      // The one the shopper asked about, and nothing else. The related items
+      // are here for the model to suggest from if the answer calls for it —
+      // putting them all on screen would bury the product under its own
+      // alternatives.
+      const cards = cheelaCards([summary]);
+
       return {
         product: {
-          ...toSummary(product),
+          ...summary,
           description: product.description,
           specs: product.specs,
           tags: product.tags,
         },
         related: repo.relatedProducts(input.productId).map(toSummary),
+        ...(cards ? { cheela: cards } : {}),
       };
     },
   }),

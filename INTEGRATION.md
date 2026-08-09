@@ -220,19 +220,19 @@ throws at startup.
 
 | File | Why it exists |
 | --- | --- |
-| **`server/.cheela/capabilities.ts`** (854 lines) | **The heart of the integration.** All 15 capabilities: zod input/output schemas, descriptions the model reads, `requiresEndUser` on the five order and address capabilities, and handlers that call `repo.js`. Also holds `defineCapability()`, `requireShopper()` and a typed facade over `repo.js` (plain JS) so this file type-checks on its own terms. |
+| **`server/.cheela/capabilities.ts`** (1380 lines) | **The heart of the integration.** All 15 capabilities: zod input/output schemas, descriptions the model reads, `requiresEndUser` on the five order and address capabilities, and handlers that call `repo.js`. Also holds `defineCapability()`, `requireShopper()`, the `cheela.*` envelope builders (§15, §16) and a typed facade over `repo.js` (plain JS) so this file type-checks on its own terms. |
 | **`server/.cheela/runtime.ts`** (25) | Creates the `Runtime`, grants the `cart:write` / `orders:write` permissions, and registers every capability. This is the file the CLI loads to discover what to deploy. |
-| **`server/cheela.config.ts`** (34) | Deploy config: API key (from env), ADP namespace, website metadata, and a conditionally-set endpoint. Scaffolded by `cheela init` — the 0.7 template still omits `provider`/`model`, which live on the dashboard. |
+| **`server/cheela.config.ts`** (40) | Deploy config: API key (from env), ADP namespace, website metadata, and a conditionally-set endpoint. Scaffolded by `cheela init` — the 0.7 template still omits `provider`/`model`, which live on the dashboard. |
 | **`server/tsconfig.json`** (24) | The `.cheela` files are TypeScript. Node strips types natively at runtime, so this exists purely so the IDE and `npm run typecheck` agree. Needs `allowImportingTsExtensions` because Node requires the real `.ts` extension on imports, and `checkJs: false` so the plain-JS storefront resolves without being type-checked. |
-| **`client/src/components/Assistant.jsx`** (457) | The shopper-facing chat panel, behind a floating launcher. The transcript, composer and status are this project's own React and CSS; the conversation underneath them is `getSession` from `@cheela/web-component/headless`, and message bodies are built by that package's `renderMarkdown` / `renderActions` — see §14. Passes `endUserToken` as a function so a later sign-in is picked up. Renders **only** if `VITE_CHEELA_PUBLIC_KEY` is set. Replies stream in token by token. |
-| **`client/public/.well-known/agent-discovery.json`** (2063) | The published manifest, fetched by `cheela manifest pull`. Served as a static asset so external agents can discover the store. Committed, because a static host will not run the CLI. |
-| **`scripts/cheela-smoke.mjs`** (187) | 35-check test driving the capabilities as an agent would, including the auth boundary (no token, bad token, another shopper's order) and the full pay/decline/retry cycle. Runs the runtime in-process — no server, no API key — yet proves every schema, because `execute()` validates both directions. |
+| **`client/src/components/Assistant.jsx`** (488) | The shopper-facing chat panel, behind a floating launcher. The transcript, composer and status are this project's own React and CSS; the conversation underneath them is `getSession` from `@cheela/web-component/headless`, and message bodies — prose, product cards, action buttons — are built by that package's `renderMessage` — see §14. Passes `endUserToken` as a function so a later sign-in is picked up. Renders **only** if `VITE_CHEELA_PUBLIC_KEY` is set. Replies stream in token by token. |
+| **`client/public/.well-known/agent-discovery.json`** (2283) | The published manifest, fetched by `cheela manifest pull`. Served as a static asset so external agents can discover the store. Committed, because a static host will not run the CLI. |
+| **`scripts/cheela-smoke.mjs`** (221) | 35-check test driving the capabilities as an agent would, including the auth boundary (no token, bad token, another shopper's order) and the full pay/decline/retry cycle. Runs the runtime in-process — no server, no API key — yet proves every schema, because `execute()` validates both directions. |
 | **`server/src/razorpay.js`** | The gateway: Orders, Payment Links, `fetchPayment`, and the two signature verifications. Talks to Razorpay over `fetch` rather than the SDK so the HMAC arithmetic — the part that decides whether money moved — is visible here rather than buried in a dependency. Also holds sandbox mode. |
 | **`server/src/webhooks.js`** | The signed webhook router, mounted on a raw body. Status codes are chosen for what they make Razorpay *do*: 401 on a bad signature (no retry wanted), 200 on an unknown order (retrying will not make it exist), 500 on a handler error (so the payment is not lost). |
 | **`client/src/pages/Pay.jsx`** | The hosted page an agent's payment link lands on. Reachable without signing in — a payment link is a bearer capability for one order, like an emailed invoice — and shows only the order number and what is owed. |
 | **`client/src/components/AddressForm.jsx`** | The address form shared by checkout and the account page, so the two cannot drift into accepting different things. Indian shape; the server re-validates the same rules. |
 | **`scripts/shared-cart-smoke.mjs`** | 13 checks that the assistant and the browser tab operate on one cart, including that an empty stale `cartId` cannot divert a signed-in shopper and a filled guest cart is adopted. |
-| **`scripts/actions-smoke.mjs`** | 11 checks running real capability output through `extractActions` — what the panel would actually render — and asserting `http:` and `javascript:` URLs are dropped. |
+| **`scripts/actions-smoke.mjs`** | 39 checks running real capability output through `extractActions`, `extractPending` and `extractCards` — what the panel would actually render — and asserting `http:` and `javascript:` URLs are dropped from buttons, cards and card images. |
 | **`scripts/razorpay-smoke.mjs`** / **`razorpay-sandbox.mjs`** | 36 checks across signature tampering, idempotent settlement, underpayment refusal and sandbox pass/fail. Neither needs a Razorpay account. |
 | **`server/.env`** | 🔒 Git-ignored. Holds the real `ch_sk_…` deploy key. The CLI reads this automatically. |
 | **`server/.env.example`** | Committed template, key redacted. |
@@ -252,7 +252,7 @@ throws at startup.
 | **`client/src/pages/Checkout.jsx`** | Split into place-then-pay, with a `PaymentStep` card form. |
 | **`client/src/api.js`** | `pay()` / `paymentMethods()`, and `allowStatuses` so a 402 decline resolves rather than throws. |
 | **`client/src/components/Layout.jsx`** | Renders `<Assistant />` on every page. |
-| **`client/src/styles.css`** | The `.assistant-launcher` / `.assistant-panel` block, and the `.chat-*` block under it — transcript, bubbles, markdown, composer and the action buttons. That second half used to be a stylesheet shipped by `@cheela/ui`; §14 covers why it is written out here now. |
+| **`client/src/styles.css`** | The `.assistant-launcher` / `.assistant-panel` block, and the `.chat-*` block under it — transcript, bubbles, markdown, composer, the action buttons and the product cards. That second half used to be a stylesheet shipped by `@cheela/ui`; §14 covers why it is written out here now. |
 | **`.gitignore`** | Root ignores `.env` and explicitly **un-ignores** `.env.example`; `server/.gitignore` (from `cheela init`) covers the CLI's generated output and cache. |
 | **`package.json`** (root + workspaces) | Scripts for dev/deploy/status/manifest/typecheck, and `--env-file-if-exists=.env` on the server scripts. |
 
@@ -278,7 +278,7 @@ throws at startup.
 | `main.jsx`, `App.jsx` | Entry point and routes. |
 | `api.js` (74) | `fetch` wrapper + money formatting. |
 | `store.jsx` (130) | Cart + auth context. The cart lives server-side; only its id is in `localStorage`. |
-| `styles.css` (365) | All styling — no CSS framework. |
+| `styles.css` (607) | All styling — no CSS framework. |
 | `components/` | `Layout`, `ProductCard`, `Icons` (inline SVG), `Assistant`. |
 | `pages/` | `Home`, `Catalog`, `Product`, `Cart`, `Checkout`, `Order`, `Login`, `Account`. |
 | `public/logo.svg` | Favicon, generated from the same SVG code as the product art. |
@@ -368,9 +368,10 @@ which are in force — currently openrouter / `openai/gpt-oss-20b:free`.
 ### What the 0.7 build changed here
 
 Current versions: `@cheela/cli@0.9.0`, `@cheela/{runtime,sdk}@0.7.0`,
-`@cheela/web-component@0.4.0`, `@cheela/client@0.6.0`, `@cheela/protocol@0.4.0`
+`@cheela/web-component@0.5.0`, `@cheela/client@0.7.0`, `@cheela/protocol@0.5.0`
 (see §12 for what the browser side brought, §14 for why the widget package is
-the web-component one rather than `@cheela/ui`, and §15 for what 0.4 added).
+the web-component one rather than `@cheela/ui`, §15 for what protocol 0.4 added
+and §16 for 0.5).
 Three things mattered on the 0.7 core:
 
 **1. `createCapability` is generic, and it is the reason this file shrank in
@@ -431,7 +432,7 @@ npm run dev                 # storefront: :5173 (UI) + :4000 (API)
 npm run smoke               # 48 — REST API incl. payments (needs the server)
 npm run smoke:cheela        # 35 — capabilities, auth and payment, in-process
 npm run smoke:cart          # 13 — assistant and browser share one cart
-npm run smoke:actions       # 20 — the pay button renders, and the payment poll
+npm run smoke:actions       # 39 — the pay button, the payment poll, product cards
 npm run smoke:addresses     # 17 — address book and isolation
 npm run smoke:sandbox       # 16 — payment pass/fail, no network
 npm run smoke:razorpay      # 20 — signatures and webhooks
@@ -495,11 +496,11 @@ shopper" in prose, and descriptions *are* published.
 *"Could not reach the Cheela API. Check the network connection and baseUrl."* —
 even though the API is reachable, CORS is correct, and the key is valid.
 
-**Still present on 0.6.0**, the version `@cheela/web-component@0.4.0` pins
-*exactly* — so replacing `@cheela/ui` (§14) did not replace the bug. Re-checked
-at that release: the constructor is byte-for-byte the same as 0.2.0's, and the
-new entry point does not help, because `createChatController` builds the client
-itself —
+**Still present on 0.7.0**, the version `@cheela/web-component@0.5.0` pins
+*exactly* — so replacing `@cheela/ui` (§14) did not replace the bug, and neither
+did the 0.5 upgrade for cards. Re-checked at that release: the constructor is
+byte-for-byte the same as 0.2.0's, and the entry point does not help, because
+`createChatController` builds the client itself —
 
 ```js
 new ExecutionClient({ apiKey, baseUrl, ...(cfg.endUserToken ? { endUserToken: cfg.endUserToken } : {}) })
@@ -572,7 +573,7 @@ embedding surface drives, `@cheela/web-component`'s controller included, and its
 public API has not changed since 0.2.0, so a newer client streams with **no UI
 code change**.
 
-**`@cheela/web-component@0.4.0` depends on `@cheela/client@0.6.0` directly, so
+**`@cheela/web-component@0.5.0` depends on `@cheela/client@0.7.0` directly, so
 nothing special is needed — just install it.** An earlier revision of this
 project forced a newer client under an older widget package with a root
 `overrides` entry; that is gone, and should not be reintroduced. If you ever do
@@ -688,33 +689,45 @@ The package's real seam for this is its `/headless` entry point, described in it
 own source as "the piece to reach for when you have your own design system":
 
 ```js
-import { DEFAULT_SESSION, getSession, renderMarkdown, renderActions }
+import { DEFAULT_SESSION, getSession, renderMessage }
   from '@cheela/web-component/headless';
 ```
 
 | Borrowed | Written here |
 | --- | --- |
 | `getSession` — the conversation: HTTP client, transcript, request lifecycle, streaming | The panel, launcher, transcript layout, bubbles, composer, empty state, thinking indicator, error banner |
-| `renderMarkdown` — model prose → DOM | Every `.chat-*` rule in `styles.css` |
-| `renderActions` — capability actions → buttons | The stall guard (§12), the `explain()` error mapping, the per-turn cart refresh |
+| `renderMessage` — everything inside a bubble: prose, product cards, action buttons | Every `.chat-*` and `.cheela-chat__*` rule in `styles.css`: the markup is the package's, the look is the shop's |
+| — | The stall guard (§12), the `explain()` error mapping, the per-turn cart refresh |
 
-The split is not arbitrary. The two borrowed renderers are the ones where a
-mistake is a security bug rather than a cosmetic one, and both are inside the
-blast radius of content this shop does not author:
+The split is not arbitrary. What is borrowed is the code where a mistake is a
+security bug rather than a cosmetic one, and all of it sits inside the blast
+radius of content this shop does not author. `renderMessage` composes three
+renderers:
 
-- `renderMarkdown` walks the parsed tree building DOM nodes, so no markup string
+- **markdown** is walked as a parsed tree building DOM nodes, so no markup string
   is ever assembled — there is no `innerHTML` in the transcript and no sanitiser
   to keep ahead of.
-- `renderActions` drops any action URL that is not `https:`. That is what stops
+- **cards** (§16) drop an image URL that is not `https:`, and remove the
+  picture's box if the image 404s at render time — a dead URL leaves a text row
+  rather than a grey hole.
+- **actions** drop any URL that is not `https:`. That is what stops
   `javascript:` in a capability's output from becoming stored XSS on this domain
   against this shop's own customers. `scripts/actions-smoke.mjs` asserts it from
   the runtime side; the panel gets the same rule for free by not re-deriving it.
 
-Both hand back detached DOM rather than React elements, so `Bubble` attaches them
-in an effect. They are rebuilt on every run rather than memoised: a
-`DocumentFragment` is emptied by the insertion, so re-using a previous one would
-blank the message — which is precisely what StrictMode's second effect pass would
-otherwise do.
+Only the composed `renderMessage` is taken, rather than the three separately.
+`renderCards` exists in the package's own `core/render`, but 0.5.0 forgot to
+re-export it from `/headless`, so it cannot be imported without reaching into
+`dist/` — and composing the three by hand would buy nothing anyway, since the
+order `renderMessage` uses (prose, then products, then buttons) is the order this
+panel wants.
+
+What comes back is a whole bubble of its own, carrying the package's class names.
+`Bubble` adopts its *children* and drops the wrapper, so the shop keeps its own
+bubble element and its own CSS. It is detached DOM rather than React elements, so
+it is attached in an effect, and it is re-run rather than memoised: the nodes are
+moved by the insertion, so re-using a previous result would blank the message —
+which is precisely what StrictMode's second effect pass would otherwise do.
 
 ### Two things worth knowing about the controller
 
@@ -732,11 +745,18 @@ when the conversation actually changes.
 ### What this costs
 
 One dependency swapped, not added: `@cheela/ui` out, `@cheela/web-component` in,
-and `@cheela/client@0.5.0` still underneath both. The panel grew from 204 lines
-to 457, and `styles.css` by 111 lines — the CSS that used to arrive as
-`@cheela/ui/style.css`. In exchange the chat matches the shop, and the two
-failure modes in §11 and §12 are handled where they are visible to a shopper
-rather than where the library happened to leave them.
+and `@cheela/client` still underneath both. The panel grew from 204 lines to 488,
+and `styles.css` by 111 lines — the CSS that used to arrive as
+`@cheela/ui/style.css` — plus 38 more for the cards in §16. In exchange the chat
+matches the shop, and the two failure modes in §11 and §12 are handled where they
+are visible to a shopper rather than where the library happened to leave them.
+
+The recurring cost is that shop-side CSS now depends on class names the package
+emits — `.cheela-chat__action`, `.cheela-chat__card` and friends. They are as
+much part of the seam as the function signatures are, but nothing type-checks
+them, so a rename upstream lands as a bubble that renders with no styling rather
+than as a build error. Worth a look at the rendered markup on each bump; §16's
+CSS is written to degrade into plain rows rather than into something broken.
 
 ---
 
@@ -852,7 +872,8 @@ reaching around the controller for; worth knowing.
 
 ### What proves it
 
-`scripts/actions-smoke.mjs` grew from 11 checks to 20, running the real
+`scripts/actions-smoke.mjs` grew from 11 checks to 20 for this — 39 now, with
+§16 — running the real
 capability output through `extractPending` and `isSettled` — the same functions
 the widget uses, both of which drop malformed input silently rather than
 throwing, so a subtly wrong spec would cost the poll with nothing to say why.
@@ -864,3 +885,126 @@ Settling it in the test goes through `repo.capturePayment` rather than
 `checkout-pay-order`, because with Razorpay configured — sandbox included — the
 pay capability only *issues* a link. Money lands on the webhook, and
 `repo.capturePayment` is what that webhook calls.
+
+---
+
+## 16. `cheela.cards` — the catalogue, as things rather than as prose
+
+Protocol 0.5 adds a third envelope beside `actions` and `pending`, and it is the
+same argument as §15's applied to what a shopper looks at before buying.
+
+**The problem.** `catalog-search-products` returned fourteen fields per product
+and no instruction about them, so what the shopper saw was whatever prose the
+model chose to write: no picture, prices retyped from memory of the tool result,
+and whichever item it happened to like listed first. For a shop that is the whole
+product. Nobody buys a bag from a paragraph describing it, and a hallucinated
+₹4,299 next to a real ₹4,999 is worse than no price at all.
+
+**The fix.** A result may now carry cards, which the panel draws itself:
+
+```ts
+cheela: {
+  cards: [{ type: 'product', title, description, price, image: { url }, url }],
+  ...cheelaActions({ label: `See all ${result.total} results`, url: searchUrl(input) }),
+}
+```
+
+`title` is the only field a card cannot do without — `extractCards` drops one
+without it, since there would be nothing to read. `price` is deliberately a
+**preformatted string**: this runtime knows the currency and the locale, and the
+widget knows neither, so `money()` runs here rather than being reinvented in the
+browser against a number and a guess.
+
+### Where the cards come from, and where they stop
+
+| Capability | Cards |
+| --- | --- |
+| `catalog-search-products` | The matches, in rank order, clipped to `MAX_CARDS_PER_RESULT` (6) |
+| `catalog-get-product` | Exactly one — the product asked about |
+| everything else | None |
+
+`catalog-get-product` returns `related` products the model may suggest from, and
+puts **none** of them on screen. Six cards for a question about one product
+buries it under its own alternatives.
+
+Clipping happens in the handler rather than being left to the widget. A
+`limit: 24` search would otherwise put 24 cards on the wire for the six that get
+drawn — the protocol's cap is on rendering, not on transport, so the honest place
+to apply it is before the payload is built.
+
+### Four decisions worth recording
+
+**Unsafe URLs are handled differently from actions, on purpose.** An action *is*
+its URL, so a rejected one leaves nothing to render and the action is dropped
+whole. A card is a product, and the name, the price and the picture all survive a
+link that cannot be opened — so the URL is stripped and the card stays. Which is
+also why cards render on an `http://localhost` storefront where the buttons do
+not: a fresh clone still sees a catalogue, just without the links.
+
+**No `alt` text, deliberately.** The protocol defaults it to `""`, which marks
+the image decorative, and that is correct here: the title sits directly beside
+the picture, so a screen reader announcing "image of Aurora Over-Ear" next to the
+words "Aurora Over-Ear" is noise, not access.
+
+**The "see all" button must not promise a count it cannot honour.** `/shop`
+filters on `q`, `category`, `sort` and `inStock` — see `Catalog.jsx` — and has no
+price control. A search with `minPriceCents` / `maxPriceCents` therefore cannot
+be reproduced as a URL, so those get the neutral *"Open in the shop"* rather than
+*"See all 14 results"* — the page behind that link drops the budget silently and
+shows every price, so the count would be wrong the moment it loaded.
+`searchUrl()` only ever emits parameters the page actually reads.
+
+**The descriptions had to change, or the shopper reads everything twice.** Both
+capabilities now state that the matches are already on screen as cards with
+pictures and prices, and ask the model to summarise or compare rather than
+relist. Left as they were, the model would narrate six products the shopper can
+see — the same duplication §15 had to remove between the poll and the model, in
+a quieter form.
+
+### On the widget side
+
+`renderMessage` composes prose, cards and actions in that order, and `Bubble`
+adopts its children (§14). The wrapper it discards carries a
+`cheela-chat__message--cards` modifier, so that hook is unavailable here; the
+shop's CSS keys off `.cheela-chat__cards` instead, and styles the card to stand
+on its own in any bubble rather than assuming the full-width `tool` message it
+arrives on today.
+
+The thumbnail box is a fixed 56×56 with `object-fit: cover`, so a column of cards
+lines up regardless of each picture's aspect ratio and the text does not reflow
+as images arrive.
+
+Three existing rules had to give. Two were narrowed to exclude card markup:
+`.chat-msg img` was adding margin inside that fixed box, and the prose-link rule
+would have underlined a whole card. The third was an assumption rather than a
+selector — `.chat-msg--tool .cheela-chat__actions { margin-top: 0 }` was correct
+while a tool bubble held nothing but buttons, and wrong the moment cards put
+something above them, collapsing the gap between the last card and *"See all 16
+results"*. The reset now comes from `.chat-msg > :first-child`, which is a
+statement about position rather than about which message type it is.
+
+Found by looking at it. None of the 39 checks would have caught a missing 9
+pixels, and none should — the panel was rendered with real capability output in
+a throwaway page, which is also how the long-title ellipsis, the card with no
+picture, and the 404 image dropping its box were confirmed.
+
+### What proves it
+
+`scripts/actions-smoke.mjs` goes from 20 checks to 39. The card half runs real
+capability output through `extractCards` — the function `renderMessage` calls,
+which like `extractActions` and `extractPending` drops malformed input silently,
+so a card this shop got subtly wrong would simply not appear with nothing to say
+why.
+
+It asserts the clip happens server-side, that the cards are the first results in
+order, that the price is a formatted string rather than a number, that a
+price-bounded search's button carries no digits, that `catalog-get-product`
+renders one card and not its related items, and — from a hand-built hostile
+payload — that an unsafe `url` and an unsafe `image` each cost only themselves
+while a title-less card is dropped entirely.
+
+The link and image assertions are written as *rules* rather than as one side of
+them, because both outcomes are legitimate: a fresh clone runs on
+`http://localhost` and `.env` here points at an https tunnel, so the test asserts
+the URL is present **exactly when** the storefront is https rather than assuming
+either.
