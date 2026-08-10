@@ -435,7 +435,7 @@ npm run smoke:cart          # 13 — assistant and browser share one cart
 npm run smoke:actions       # 53 — the pay button, the poll, product cards, reply buttons
 npm run smoke:addresses     # 17 — address book and isolation
 npm run smoke:sandbox       # 16 — payment pass/fail, no network
-npm run smoke:razorpay      # 20 — signatures and webhooks
+npm run smoke:razorpay      # 28 — signatures, webhooks, the payment-link callback
 npm run smoke:reviews       # 42 — CSV parsing, paise conversion, review paging, shrinkage
 npm run typecheck           # the .cheela TypeScript
 
@@ -1252,3 +1252,77 @@ exactly. `ExecutionClient` accepts `fetchImpl`, `ControllerConfig` still has no
 field for it, and `createChatController` still constructs the client as
 `new ExecutionClient({ apiKey, baseUrl, endUserToken })`. The workaround at the
 top of `Assistant.jsx` stays.
+
+---
+
+## 19. The agent checkout had no way to finish
+
+§15 describes the panel watching an order until it settles: `checkout-pay-order`
+returns a `cheela.pending` spec, the widget polls `orders-get-order` every 15
+seconds, and the wait ends when the output reports `cheela.settled`. All of that
+worked. What did not work was anything ever setting the order to paid.
+
+### What actually happened
+
+`checkout-pay-order` creates a **payment link** and sets its `callback_url` to
+`${SHOP_URL}/order/:number`. A shopper pays on Razorpay's hosted page and gets
+redirected back — and a payment link redirects with a completely different set
+of parameters than the Checkout modal:
+
+| | Checkout modal | Payment link |
+| --- | --- | --- |
+| Returned params | `razorpay_order_id`, `razorpay_payment_id`, `razorpay_signature` | `razorpay_payment_link_id`, `razorpay_payment_link_reference_id`, `razorpay_payment_link_status`, `razorpay_payment_id`, `razorpay_signature` |
+| Signed over | `order_id\|payment_id` | `link_id\|reference_id\|status\|payment_id` |
+| Consumed by | `POST /payment/verify` → order paid | **nothing** |
+
+`Order.jsx` rendered the order and ignored the query string entirely, and
+`verifyPaymentSignature` only implemented the modal's two-field scheme. So the
+browser path — the one that settles the modal flow — simply did not exist for
+links.
+
+That left the `payment_link.paid` webhook as the only way an agent-driven order
+could ever be marked paid, which turned a documented redundancy into a single
+point of failure. Production logs told the story plainly: a real payment on
+2026-08-08 produced
+
+```
+GET /order/CHL-5FVN4A9C?razorpay_payment_link_id=plink_…&razorpay_payment_link_status=paid&…  200
+```
+
+and **no** `POST /webhooks/razorpay` in thirty days. The endpoint is live and
+rejects unsigned deliveries with a 401, so it works — Razorpay was simply never
+configured to call it. The order stayed at `pending_payment`, `orders-get-order`
+kept answering `settled: false`, and the panel sat on "Waiting for
+confirmation…" until the fifteen-minute timeout.
+
+### The fix
+
+`POST /orders/:id/payment/verify-link` is the link flow's equivalent of
+`/payment/verify`, and `Order.jsx` posts the callback to it before it loads the
+order — settling first, so the page does not render "unpaid" during the round
+trip at the exact moment the shopper is looking hardest.
+
+Both callbacks now share `confirmWithRazorpay()`. Only the proof that Razorpay
+was talking differs between them; everything after — re-fetch the payment,
+refuse a mismatched amount, record a decline as a decline — has to be identical,
+and sharing it means the agent path cannot drift into a weaker check than the
+browser path.
+
+One check exists only on this path. The signature covers the reference id, so a
+valid signature proves *which* order was paid for — and without comparing that
+to the order in the URL, an attacker could replay their own genuine callback at
+someone else's order and have the signature verify, because it is their own.
+`smoke:razorpay` asserts it.
+
+The query string is cleared with `replace: true` once consumed, so a payment id
+and signature do not sit in the address bar waiting to be copied, and Back does
+not re-run the callback.
+
+### This does not remove the need for the webhook
+
+A shopper who pays and never returns to the tab still produces no callback.
+That is exactly what the webhook is for, and it is still not firing. Point a
+Razorpay webhook at `https://demo-shop.cheelalabs.com/webhooks/razorpay` with
+`payment_link.paid`, `payment.captured` and `payment.failed` subscribed, using
+the secret in `RAZORPAY_WEBHOOK_SECRET`. The handler for all three has been in
+`webhooks.js` the whole time.

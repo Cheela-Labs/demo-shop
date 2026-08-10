@@ -67,6 +67,12 @@ export const api = {
 
   checkout: (payload) => request('/orders', { method: 'POST', body: payload }),
   order: (id) => request(`/orders/${id}`),
+  // The payment-link callback. A decline is a resolved outcome (402) rather
+  // than a thrown error, exactly as with the Checkout modal's verify.
+  verifyPaymentLink: (orderNumber, payload) =>
+    request(`/orders/${orderNumber}/payment/verify-link`, {
+      method: 'POST', body: payload, allowStatuses: [402],
+    }),
   paymentMethods: () => request('/payment-methods'),
   // A decline comes back as 402 with the order attached, so it is a resolved
   // result rather than a thrown error the caller has to unpick.

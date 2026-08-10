@@ -398,9 +398,37 @@ api.post('/orders/:id/payment/verify', requireOrderAccess, wrap(async (req, res)
     });
   }
 
-  // Verified — now ask Razorpay what actually happened rather than trusting the
-  // browser's word for the method, amount or status.
-  const payment = await razorpay.fetchPayment(razorpayPaymentId);
+  return confirmWithRazorpay(res, order, razorpayPaymentId, {
+    razorpayOrderId,
+    razorpaySignature,
+  });
+}));
+
+/**
+ * Settles an order once its callback signature has been verified.
+ *
+ * Shared by the Checkout modal and the payment-link callback, because the only
+ * thing that differs between them is *how the browser proved it was Razorpay
+ * talking*. Everything after that has to be identical: ask Razorpay what
+ * actually happened, refuse an amount that does not match, and record a
+ * decline as a decline. Doing it once means the agent path cannot drift into a
+ * weaker check than the browser path.
+ */
+async function confirmWithRazorpay(res, order, razorpayPaymentId, extra) {
+  /*
+   * Verified — now ask Razorpay what actually happened rather than trusting the
+   * browser's word for the method, amount or status.
+   *
+   * The `amount` here is a hint that only the sandbox reads: the real
+   * `fetchPayment` issues `GET /payments/:id` and ignores it entirely, so in
+   * production the figure compared below is Razorpay's, not ours. Under
+   * `RAZORPAY_SIMULATE` there is no external truth to fetch, so the simulator
+   * echoes it back and the amount check becomes a tautology — which is the same
+   * bargain `/payment/simulate` already makes. Underpayment is still covered
+   * for real, on the webhook path, where the amount genuinely comes from
+   * outside.
+   */
+  const payment = await razorpay.fetchPayment(razorpayPaymentId, { amount: order.total });
 
   if (payment.amount !== order.total) {
     return res.status(400).json({
@@ -418,12 +446,64 @@ api.post('/orders/:id/payment/verify', requireOrderAccess, wrap(async (req, res)
 
   const settled = repo.settleRazorpayPayment(order.id, {
     ...razorpay.describePayment(payment),
-    razorpayOrderId,
+    ...extra,
     razorpayPaymentId,
-    razorpaySignature,
   });
 
   return res.json({ ok: true, order: settled.order, alreadyPaid: settled.alreadyPaid });
+}
+
+/**
+ * The payment-link callback — the agent path's equivalent of `/payment/verify`.
+ *
+ * `checkout-pay-order` hands the shopper a hosted Razorpay link and asks the
+ * chat panel to poll `orders-get-order` until it settles. Nothing was settling
+ * it: a payment link redirects back with `razorpay_payment_link_id` and friends
+ * rather than the modal's `razorpay_order_id`, the order page ignored those
+ * parameters, and the only other path — the `payment_link.paid` webhook —
+ * depends on the Razorpay dashboard actually being configured to send it. So a
+ * completed payment left the order at `pending_payment` and the panel sat on
+ * "Waiting for confirmation…" until it timed out fifteen minutes later.
+ *
+ * This closes that, and restores the property the browser flow already had: two
+ * independent things settle an order, and whichever lands first wins.
+ */
+api.post('/orders/:id/payment/verify-link', requireOrderAccess, wrap(async (req, res) => {
+  const order = req.order;
+  const {
+    razorpayPaymentLinkId, razorpayPaymentLinkReferenceId,
+    razorpayPaymentLinkStatus, razorpayPaymentId, razorpaySignature,
+  } = req.body || {};
+
+  const valid = razorpay.verifyPaymentLinkSignature({
+    paymentLinkId: razorpayPaymentLinkId,
+    referenceId: razorpayPaymentLinkReferenceId,
+    status: razorpayPaymentLinkStatus,
+    paymentId: razorpayPaymentId,
+    signature: razorpaySignature,
+  });
+
+  if (!valid) {
+    return res.status(400).json({
+      error: 'Payment signature verification failed. The order has not been marked paid.',
+    });
+  }
+
+  /*
+   * The signature covers the reference id, so a valid one proves *which* order
+   * was paid for. Checking it against the order in the path stops a genuine
+   * callback for one order being replayed at another — the signature would
+   * still verify, because it is the attacker's own.
+   */
+  if (razorpayPaymentLinkReferenceId !== order.number) {
+    return res.status(400).json({
+      error: 'This payment belongs to a different order.',
+    });
+  }
+
+  return confirmWithRazorpay(res, order, razorpayPaymentId, {
+    razorpaySignature,
+  });
 }));
 
 /**

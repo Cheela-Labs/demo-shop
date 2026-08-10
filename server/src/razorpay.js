@@ -291,6 +291,34 @@ export function verifyPaymentSignature({ orderId, paymentId, signature }) {
 }
 
 /**
+ * Verifies the callback from a **payment link**.
+ *
+ * A different signature scheme from the Checkout modal above, and the reason
+ * the agent flow could not settle itself. The modal signs `order_id|payment_id`
+ * and redirects with `razorpay_order_id`; a payment link signs four fields and
+ * redirects with none of them:
+ *
+ *   HMAC-SHA256(`${linkId}|${referenceId}|${status}|${paymentId}`, KEY_SECRET)
+ *
+ * Same key, same trust model as `verifyPaymentSignature`: these values reach us
+ * through the shopper's own browser, so they mean nothing until the HMAC checks
+ * out, and the amount is confirmed against Razorpay afterwards rather than
+ * taken from the query string.
+ *
+ * `reference_id` is the order number — `createPaymentLink` sets it — so a
+ * signature that verifies also proves which order was paid for.
+ */
+export function verifyPaymentLinkSignature({
+  paymentLinkId, referenceId, status, paymentId, signature,
+}) {
+  if (!paymentLinkId || !referenceId || !status || !paymentId || !signature) return false;
+  const expected = createHmac('sha256', KEY_SECRET)
+    .update(`${paymentLinkId}|${referenceId}|${status}|${paymentId}`)
+    .digest('hex');
+  return safeEqual(expected, signature);
+}
+
+/**
  * Verifies a webhook delivery.
  *
  * Signed over the **raw** request bytes with the webhook secret, so the route

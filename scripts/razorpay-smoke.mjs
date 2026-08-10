@@ -198,5 +198,94 @@ check('the verify endpoint refuses an invalid signature', junk.status === 400, `
 const afterJunk = (await json(`/api/orders/${short.number}`)).body.order;
 check('a refused verification leaves the order unpaid', afterJunk.status !== 'paid', afterJunk.status);
 
+/* --------------------- payment-link callback (agent path) ----------------- */
+
+/*
+ * The agent flow hands the shopper a hosted payment link, and Razorpay
+ * redirects back with a *different* set of parameters and a *different*
+ * signature scheme than the Checkout modal. Nothing consumed them, so a
+ * completed payment left the order at pending_payment and the chat panel sat on
+ * "Waiting for confirmation…" until its fifteen-minute poll gave up.
+ *
+ * Signed here the way Razorpay signs it: four fields, pipe-joined, key secret.
+ */
+const signLink = (linkId, reference, status, paymentId) =>
+  createHmac('sha256', KEY_SECRET)
+    .update(`${linkId}|${reference}|${status}|${paymentId}`)
+    .digest('hex');
+
+const linkOrder = await placeOrder();
+const linkId = `plink_smoke${Date.now().toString(36)}`;
+
+const badSig = await json(`/api/orders/${linkOrder.number}/payment/verify-link`, {
+  method: 'POST',
+  body: {
+    razorpayPaymentLinkId: linkId,
+    razorpayPaymentLinkReferenceId: linkOrder.number,
+    razorpayPaymentLinkStatus: 'paid',
+    razorpayPaymentId: 'pay_LINKFAKE',
+    razorpaySignature: 'nope',
+  },
+});
+check('the link callback refuses an invalid signature', badSig.status === 400, `HTTP ${badSig.status}`);
+check('a refused link callback leaves the order unpaid',
+  (await json(`/api/orders/${linkOrder.number}`)).body.order.status !== 'paid');
+
+/*
+ * A genuine callback for one order, replayed at another. The signature still
+ * verifies — it is the attacker's own, over their own reference id — so the
+ * reference check is the only thing standing between this and a free order.
+ */
+const victim = await placeOrder();
+const replay = await json(`/api/orders/${victim.number}/payment/verify-link`, {
+  method: 'POST',
+  body: {
+    razorpayPaymentLinkId: linkId,
+    razorpayPaymentLinkReferenceId: linkOrder.number,
+    razorpayPaymentLinkStatus: 'paid',
+    razorpayPaymentId: 'pay_LINKREPLAY',
+    razorpaySignature: signLink(linkId, linkOrder.number, 'paid', 'pay_LINKREPLAY'),
+  },
+});
+check('a validly-signed callback cannot be replayed at another order',
+  replay.status === 400, `HTTP ${replay.status}`);
+check('the replayed-at order stays unpaid',
+  (await json(`/api/orders/${victim.number}`)).body.order.status !== 'paid');
+
+const linkPaymentId = 'pay_LINKOK';
+const good = await json(`/api/orders/${linkOrder.number}/payment/verify-link`, {
+  method: 'POST',
+  body: {
+    razorpayPaymentLinkId: linkId,
+    razorpayPaymentLinkReferenceId: linkOrder.number,
+    razorpayPaymentLinkStatus: 'paid',
+    razorpayPaymentId: linkPaymentId,
+    razorpaySignature: signLink(linkId, linkOrder.number, 'paid', linkPaymentId),
+  },
+});
+check('a correctly signed link callback is accepted', good.status === 200, `HTTP ${good.status}`);
+
+const afterLink = (await json(`/api/orders/${linkOrder.number}`)).body.order;
+check('paying by link marks the order paid', afterLink.status === 'paid', afterLink.status);
+
+// The whole point of the fix. `orders-get-order` reports `cheela.settled` when
+// the order leaves pending_payment, and that is the field the panel polls for.
+check('the order has left pending_payment, which is what ends the wait',
+  afterLink.status !== 'pending_payment', afterLink.status);
+
+const replayedSelf = await json(`/api/orders/${linkOrder.number}/payment/verify-link`, {
+  method: 'POST',
+  body: {
+    razorpayPaymentLinkId: linkId,
+    razorpayPaymentLinkReferenceId: linkOrder.number,
+    razorpayPaymentLinkStatus: 'paid',
+    razorpayPaymentId: linkPaymentId,
+    razorpaySignature: signLink(linkId, linkOrder.number, 'paid', linkPaymentId),
+  },
+});
+check('settling twice is idempotent rather than a second charge',
+  replayedSelf.status === 200 && replayedSelf.body?.alreadyPaid === true,
+  JSON.stringify({ status: replayedSelf.status, alreadyPaid: replayedSelf.body?.alreadyPaid }));
+
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed ? 1 : 0);

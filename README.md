@@ -93,12 +93,12 @@ npm run smoke:cart       # 13 — the assistant and the browser tab share one ca
 npm run smoke:actions    # 53 — the pay button, the payment poll, product cards, reply buttons
 npm run smoke:addresses  # 17 — address book, including cross-account isolation
 npm run smoke:sandbox    # 16 — payment pass/fail, no network to Razorpay
-npm run smoke:razorpay   # 20 — signature tampering and webhook settlement
+npm run smoke:razorpay   # 28 — signature tampering, webhook settlement, link callback
 npm run smoke:reviews    # 42 — CSV parsing, paise conversion, review paging, rating shrinkage
 npm run typecheck        # the .cheela TypeScript
 ```
 
-244 checks. None of them need a Razorpay account or a Cheela API key.
+252 checks. None of them need a Razorpay account or a Cheela API key.
 
 ---
 

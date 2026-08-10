@@ -1,16 +1,72 @@
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 
 import { api, money } from '../api';
 import { Check } from '../components/Icons';
 
+/**
+ * Razorpay redirects here after a **payment link** is paid, with the outcome in
+ * the query string. Four of these five are what the signature is computed over;
+ * all five have to be present for the callback to be worth sending on.
+ */
+function paymentLinkCallback(params) {
+  const payload = {
+    razorpayPaymentLinkId: params.get('razorpay_payment_link_id'),
+    razorpayPaymentLinkReferenceId: params.get('razorpay_payment_link_reference_id'),
+    razorpayPaymentLinkStatus: params.get('razorpay_payment_link_status'),
+    razorpayPaymentId: params.get('razorpay_payment_id'),
+    razorpaySignature: params.get('razorpay_signature'),
+  };
+  return Object.values(payload).every(Boolean) ? payload : null;
+}
+
 export default function Order() {
   const { id } = useParams();
+  const [params, setParams] = useSearchParams();
   const [order, setOrder] = useState(null);
   const [error, setError] = useState(null);
 
+  /*
+   * Settle first, then load — otherwise the page renders the order as still
+   * unpaid for as long as the round trip takes, which is the one moment the
+   * shopper is looking hardest at whether it worked.
+   *
+   * The values here arrive through the shopper's own browser and are worth
+   * nothing until the server verifies the HMAC, which is why this posts them
+   * rather than deciding anything itself. A failure is deliberately not shown:
+   * the `payment_link.paid` webhook settles the same order independently, so
+   * the honest thing to display is whatever the order says once it loads.
+   */
   useEffect(() => {
-    api.order(id).then((r) => setOrder(r.order)).catch((err) => setError(err.message));
+    let cancelled = false;
+
+    async function load() {
+      const callback = paymentLinkCallback(params);
+      if (callback) {
+        try {
+          await api.verifyPaymentLink(id, callback);
+        } catch {
+          // Swallowed on purpose — see above.
+        }
+        if (cancelled) return;
+        // Drop the credentials from the address bar before anything can copy,
+        // bookmark or share it. `replace` so Back does not re-run the callback.
+        setParams({}, { replace: true });
+      }
+
+      try {
+        const { order: loaded } = await api.order(id);
+        if (!cancelled) setOrder(loaded);
+      } catch (err) {
+        if (!cancelled) setError(err.message);
+      }
+    }
+
+    load();
+    return () => { cancelled = true; };
+    // `params` is deliberately not a dependency: this consumes the callback and
+    // then clears it, and re-running on that change would fetch the order twice.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   if (error) {
