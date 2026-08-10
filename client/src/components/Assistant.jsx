@@ -22,6 +22,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   DEFAULT_SESSION,
   DEFAULT_WAITING_LABEL,
@@ -188,8 +189,66 @@ function explain(error) {
  * moved by the insertion, so a re-run holding the previous ones would blank the
  * message — which is exactly what StrictMode's second pass would do.
  */
+/**
+ * Whether a link points back at this storefront.
+ *
+ * Compared by resolved origin rather than by prefix, because the capability
+ * builds its URLs from `STOREFRONT_URL` and a developer running against an
+ * https tunnel gets card links pointing at a different host than the page —
+ * those are genuinely external and keep the package's new-tab behaviour.
+ */
+function isInternalLink(href) {
+  try {
+    return new URL(href, window.location.href).origin === window.location.origin;
+  } catch {
+    return false;
+  }
+}
+
 function Bubble({ message, onReply, busy }) {
   const host = useRef(null);
+  const navigate = useNavigate();
+
+  /*
+   * Cards and action buttons are anchors the package builds, and it sets
+   * `target="_blank" rel="noopener noreferrer"` on every one of them. That is
+   * the right default for a widget embedded in a site it knows nothing about,
+   * and the wrong one here: this shop *is* the destination, so a product card
+   * throwing the shopper into a second tab loses the conversation that produced
+   * it.
+   *
+   * There is no option for it — `renderMessage` takes only `onReply` and
+   * `disabled` — so the attributes come off afterwards. Only for our own
+   * origin: a link somewhere else keeps both attributes, and `rel` in
+   * particular is load-bearing on those.
+   *
+   * Stripping alone would still be a full page load, and a reload drops the
+   * transcript: `getSession` keys the conversation at module scope, so it
+   * lives exactly as long as the document does. The click is therefore routed
+   * through the router below, which keeps the panel open and the conversation
+   * intact.
+   */
+  useEffect(() => {
+    const node = host.current;
+    if (!node) return undefined;
+
+    function handleClick(event) {
+      // Anything that already means "somewhere else, please" is left alone:
+      // a modifier click, a middle click, or a handler that got there first.
+      if (event.defaultPrevented || event.button !== 0) return;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+
+      const link = event.target instanceof Element ? event.target.closest('a[href]') : null;
+      if (!link || !node.contains(link) || !isInternalLink(link.href)) return;
+
+      event.preventDefault();
+      const url = new URL(link.href, window.location.href);
+      navigate(`${url.pathname}${url.search}${url.hash}`);
+    }
+
+    node.addEventListener('click', handleClick);
+    return () => node.removeEventListener('click', handleClick);
+  }, [navigate]);
 
   useEffect(() => {
     const node = host.current;
@@ -211,6 +270,14 @@ function Bubble({ message, onReply, busy }) {
     // belong in the transcript but have nothing to draw, so the bubble takes
     // itself out rather than leaving an empty box in the log.
     node.hidden = built === null;
+
+    // Re-done on every build rather than once: the nodes above are new each
+    // time, so the attributes are back on them each time.
+    for (const link of node.querySelectorAll('a[href]')) {
+      if (!isInternalLink(link.href)) continue;
+      link.removeAttribute('target');
+      link.removeAttribute('rel');
+    }
   }, [message, onReply, busy]);
 
   return <div className={`chat-msg chat-msg--${message.role}`} ref={host} />;

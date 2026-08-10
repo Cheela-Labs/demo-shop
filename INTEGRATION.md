@@ -1208,6 +1208,43 @@ The split from §14 is unchanged and still the point: borrow the code where a
 mistake is a security bug, write the code where a mistake is a cosmetic one.
 `renderMessage` is the former. A composer is the latter.
 
+### Links open in this tab, which took work
+
+The package sets `target="_blank" rel="noopener noreferrer"` on every anchor it
+draws — cards and action buttons alike. That is the right default for a widget
+embedded in a site it knows nothing about, and the wrong one here: this shop
+*is* the destination, so a product card throwing the shopper into a second tab
+loses the conversation that produced it.
+
+There is no option for it. `renderMessage` takes `onReply` and `disabled` and
+nothing else, so `Bubble` strips the two attributes after each build — and only
+from links whose resolved **origin matches the page**. A link somewhere else
+keeps both, `rel` very much included.
+
+Stripping alone would not have been enough. This is a single-page app and
+`getSession` keys the conversation at module scope, so a full page load drops
+the transcript: the card would open in this tab and throw away the chat on the
+way. So a delegated click handler on the bubble routes same-origin links through
+`useNavigate()` instead, which keeps the panel open and the conversation intact.
+
+It gets out of the way of anyone who actually wants a new tab. A modifier click
+(ctrl / cmd / shift / alt), a middle click, or an already-defaulted event is left
+for the browser, as is any cross-origin link:
+
+| Click | Same origin | Elsewhere |
+| --- | --- | --- |
+| Plain left click | Router navigation, panel survives | New tab |
+| Ctrl / Cmd / Shift / middle | New tab | New tab |
+
+In development this does nothing, and that is correct: the capability builds its
+URLs from `STOREFRONT_URL`, so a developer running against a tunnel gets cards
+pointing at a different host than the page. Those are genuinely external.
+
+This is the third thing on the §14 list of costs — after the class names and the
+`renderCards` export — that comes from rendering markup this repo does not own.
+None of it is type-checked, so an upstream change to how anchors are built lands
+as behaviour, not as a build error.
+
 ### The `fetchImpl` bug survives another release
 
 Re-checked on `@cheela/client@0.8.0`, which `@cheela/web-component@0.6.0` pins
