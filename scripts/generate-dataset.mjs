@@ -360,13 +360,22 @@ for (const p of curated) {
   curatedIds.add(p.id);
 
   for (let i = 0; i < count; i += 1) {
-    // Draw around the target: mostly the two stars either side of it, with a
-    // thin tail, which is what a real product's histogram looks like.
+    /*
+     * Draw around the target, but always leave a tail. A product with 120
+     * reviews and nothing below three stars does not exist, and the shape of
+     * the histogram is most of what a shopper reads it for — a flat 4.6 and a
+     * 4.6 with a handful of one-star returns are different products.
+     *
+     * The tail is also what makes `catalog-get-product-reviews` sortable to
+     * `critical` mean anything: with no negative reviews the capability has
+     * nothing to lead with and the follow-up button never appears.
+     */
     const roll = r();
     let stars = Math.round(target);
-    if (roll > 0.62) stars = Math.min(5, stars + 1);
-    else if (roll > 0.44) stars = Math.max(1, stars - 1);
-    else if (roll > 0.38) stars = Math.max(1, stars - 2);
+    if (roll < 0.02) stars = 1;
+    else if (roll < 0.045) stars = 2;
+    else if (roll < 0.09) stars -= 2;
+    else if (roll < 0.22) stars -= 1;
     stars = Math.max(1, Math.min(5, stars));
 
     reviews.push({

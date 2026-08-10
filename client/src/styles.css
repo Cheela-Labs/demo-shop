@@ -455,6 +455,18 @@ input.input:focus, select.select:focus, textarea.input:focus {
 }
 .cheela-chat__action:hover { background: #f7f7fb; border-color: #d5d5e4; }
 .cheela-chat__action:active { transform: translateY(1px); }
+
+/* Reply actions (protocol 0.6) arrive as real `<button>`s while links arrive as
+   `<a>`s — the package draws the honest element for each, since one navigates
+   and one does not. Everything above is written on the class and so applies to
+   both; these three are the UA defaults a button brings and an anchor does not.
+   Without them a reply button shrink-wraps and centres while the link beside it
+   is full width and left-aligned. */
+button.cheela-chat__action { width: 100%; text-align: left; cursor: pointer; }
+button.cheela-chat__action:disabled {
+  opacity: 0.55; cursor: default; transform: none; background: var(--surface);
+  border-color: var(--line);
+}
 .cheela-chat__action--primary {
   background: var(--brand); border-color: var(--brand); color: #fff;
 }

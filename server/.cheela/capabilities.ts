@@ -33,7 +33,12 @@
 import { createAction, createCapability } from '@cheela/sdk';
 import type { Action, ActionContext, Capability } from '@cheela/sdk';
 import type { Runtime } from '@cheela/runtime';
-import { MAX_CARDS_PER_RESULT, isSafeActionUrl } from '@cheela/protocol';
+import {
+  MAX_ACTIONS_PER_RESULT,
+  MAX_CARDS_PER_RESULT,
+  MAX_REPLY_VALUE_LENGTH,
+  isSafeActionUrl,
+} from '@cheela/protocol';
 import { z } from 'zod';
 
 import * as repoModule from '../src/repo.js';
@@ -274,15 +279,60 @@ function requireShopper(context: ActionContext) {
  * the rendering beyond the model's reach — it still decides whether to call the
  * capability, but not how the result looks.
  */
-const linkActions = z.array(z.object({
+const linkAction = z.object({
   type: z.literal('link'),
   label: z.string(),
   url: z.string(),
   description: z.string().optional(),
   style: z.enum(['primary', 'secondary']).optional(),
-}));
+});
 
-const actionsShape = z.object({ actions: linkActions }).optional();
+/**
+ * `type: 'reply'` — protocol 0.6, and the other half of the same idea.
+ *
+ * A link action takes the shopper somewhere. A reply action keeps them in the
+ * conversation: pressing it submits `value` as their next turn. That is the
+ * difference between "Pay ₹5,899" and "What do the reviews say?".
+ *
+ * `label` and `value` are separate because they have different audiences. The
+ * label is read by a person who can see what it sits under; the value is read
+ * by a model that cannot, so it has to stand on its own — "What do reviews say
+ * about the Aurora Over-Ear Headphones?" rather than "yes".
+ *
+ * The value is submitted verbatim and becomes input tokens, which is why the
+ * protocol caps it at MAX_REPLY_VALUE_LENGTH and drops anything longer rather
+ * than truncating it. Half of an instruction is a different instruction.
+ */
+const replyAction = z.object({
+  type: z.literal('reply'),
+  label: z.string(),
+  value: z.string().max(MAX_REPLY_VALUE_LENGTH),
+  description: z.string().optional(),
+  style: z.enum(['primary', 'secondary']).optional(),
+});
+
+/** Link-only, for results where every button navigates — paying, most of all. */
+const linkActions = z.array(linkAction);
+
+const uiActions = z.array(z.discriminatedUnion('type', [linkAction, replyAction]));
+
+const actionsShape = z.object({ actions: uiActions }).optional();
+
+/**
+ * A reply button, or nothing if the value would be dropped downstream anyway.
+ *
+ * The widget silently omits an over-length value, so building one here would
+ * produce a button that exists in the output, passes schema validation, and
+ * never appears on screen. Better to not claim it.
+ */
+function replyButton(
+  label: string,
+  value: string,
+  extra: { description?: string; style?: 'primary' | 'secondary' } = {},
+) {
+  if (value.length > MAX_REPLY_VALUE_LENGTH) return null;
+  return { type: 'reply' as const, label, value, ...extra };
+}
 
 /**
  * `cheela.cards` — protocol 0.5, and the same argument as actions applied to
@@ -395,6 +445,41 @@ function cheelaActions(...candidates: LinkActionInput[]) {
   return actions.length ? { actions } : undefined;
 }
 
+type ReplyActionOutput = { type: 'reply'; label: string; value: string; description?: string; style?: 'primary' | 'secondary' };
+
+/**
+ * The mixed version: links that navigate, and reply buttons that keep the
+ * shopper in the conversation.
+ *
+ * Links go through the same `https:`-only filter as above. Replies carry no URL
+ * and so cannot be a navigation exploit, but they are not free either — pressing
+ * one spends a turn, so the cap matters more here than it does for links. The
+ * protocol allows MAX_ACTIONS_PER_RESULT; slicing here means the ones that get
+ * dropped are the ones this code ranked last, rather than whichever the widget
+ * happened to stop at.
+ *
+ * Links are ordered first deliberately. The link is the thing the shopper asked
+ * for — a product page, a checkout — and a reply button is a suggestion about
+ * what to ask next.
+ */
+function cheelaUiActions(...candidates: (LinkActionInput | ReplyActionOutput | null)[]) {
+  const links = candidates
+    .filter((a): a is LinkActionInput =>
+      a !== null && !('type' in a) && typeof a.url === 'string' && isSafeActionUrl(a.url))
+    .map((a) => ({
+      type: 'link' as const,
+      label: a.label,
+      url: a.url as string,
+      ...(a.description ? { description: a.description } : {}),
+      ...(a.style ? { style: a.style } : {}),
+    }));
+
+  const replies = candidates.filter((a): a is ReplyActionOutput => a !== null && 'type' in a);
+
+  const actions = [...links, ...replies].slice(0, MAX_ACTIONS_PER_RESULT);
+  return actions.length ? { actions } : undefined;
+}
+
 /**
  * Builds the `cheela.cards` block from product summaries.
  *
@@ -451,6 +536,41 @@ function searchUrl(input: {
 
   const query = params.toString();
   return `${SHOP_URL}/shop${query ? `?${query}` : ''}`;
+}
+
+/**
+ * The same search, written out as something a shopper could have typed.
+ *
+ * This is the `value` behind a refinement button, and it is submitted as a turn
+ * with none of the surrounding context attached. So it restates every filter
+ * rather than saying "the same but in stock" — a model reconstructing the
+ * previous query from the transcript is a model that can reconstruct it wrong,
+ * and the failure would look like the button doing something arbitrary.
+ *
+ * Prices are spelled in rupees because that is what a person would say; the
+ * model turns them back into `*Cents` on the next call.
+ */
+function searchRestatement(
+  input: {
+    query?: string;
+    category?: string;
+    sort?: string;
+    inStockOnly?: boolean;
+    minPriceCents?: number;
+    maxPriceCents?: number;
+  },
+  overrides: { inStockOnly?: boolean } = {},
+) {
+  const merged = { ...input, ...overrides };
+  const parts = [`Search the shop for ${merged.query ? `"${merged.query}"` : 'anything'}`];
+
+  if (merged.category) parts.push(`in ${merged.category}`);
+  if (merged.minPriceCents !== undefined) parts.push(`over ${money(merged.minPriceCents)}`);
+  if (merged.maxPriceCents !== undefined) parts.push(`under ${money(merged.maxPriceCents)}`);
+  if (merged.inStockOnly) parts.push('showing only what is in stock');
+  if (merged.sort) parts.push(`sorted by ${merged.sort}`);
+
+  return `${parts.join(', ')}.`;
 }
 
 /* ----------------------------- shared shapes ----------------------------- */
@@ -701,7 +821,7 @@ export const searchProducts = defineCapability(
       pages: z.number().int(),
       cheela: z.object({
         cards: productCards,
-        actions: linkActions.optional(),
+        actions: uiActions.optional(),
       }).optional(),
     }),
   }),
@@ -737,6 +857,27 @@ export const searchProducts = defineCapability(
        */
       const bounded = input.minPriceCents !== undefined || input.maxPriceCents !== undefined;
       const hidden = result.total - Math.min(items.length, MAX_CARDS_PER_RESULT);
+      /*
+       * How many the in-stock refinement would remove — counted across the
+       * whole result set, not just the six on screen. The button filters the
+       * search, not the shortlist, so counting the shortlist would both
+       * understate the effect and hide the button on exactly the searches
+       * where the top results happen to be in stock (which is most of them,
+       * since `featured` ranking already prefers stocked products).
+       *
+       * One extra COUNT against an indexed column, and only when the shopper
+       * has not already asked for in-stock only.
+       */
+      const soldOut = input.inStockOnly
+        ? 0
+        : result.total - repo.listProducts({
+          q: input.query,
+          category: input.category,
+          minPrice: input.minPriceCents ?? null,
+          maxPrice: input.maxPriceCents ?? null,
+          inStock: true,
+          limit: 1,
+        }).total;
 
       return {
         items,
@@ -747,13 +888,34 @@ export const searchProducts = defineCapability(
           ? {
             cheela: {
               ...cards,
-              ...cheelaActions({
-                label: hidden > 0 && !bounded
-                  ? `See all ${result.total} results`
-                  : 'Open in the shop',
-                url: searchUrl(input),
-                style: 'secondary',
-              }),
+              ...cheelaUiActions(
+                {
+                  label: hidden > 0 && !bounded
+                    ? `See all ${result.total} results`
+                    : 'Open in the shop',
+                  url: searchUrl(input),
+                  style: 'secondary',
+                },
+                /*
+                 * One refinement, offered only when it would change the
+                 * result. A catalogue this size always has something sold
+                 * out, so the filter is close to always useful — but if the
+                 * shopper already asked for in-stock only, repeating it back
+                 * is a button that does nothing.
+                 *
+                 * The value restates the whole search rather than saying
+                 * "same but in stock": it is read as a standalone turn, and
+                 * a model reconstructing the previous query from context is
+                 * a model that can get it wrong.
+                 */
+                !input.inStockOnly && soldOut > 0
+                  ? replyButton(
+                    'Only what is in stock',
+                    searchRestatement(input, { inStockOnly: true }),
+                    { description: `${soldOut} of the ${result.total} matches are sold out` },
+                  )
+                  : null,
+              ),
             },
           }
           : {}),
@@ -782,7 +944,10 @@ export const getProduct = defineCapability(
       }),
       related: z.array(productSummary),
       reviews: reviewSummaryShape,
-      cheela: cardsShape,
+      cheela: z.object({
+        cards: productCards,
+        actions: uiActions.optional(),
+      }).optional(),
     }),
   }),
   createAction({
@@ -801,6 +966,7 @@ export const getProduct = defineCapability(
       // putting them all on screen would bury the product under its own
       // alternatives.
       const cards = cheelaCards([summary]);
+      const reviewStats = repo.reviewSummary(input.productId);
 
       return {
         product: {
@@ -814,8 +980,29 @@ export const getProduct = defineCapability(
         // difference between "is this any good?" — answerable from the average
         // and the shape of the histogram — and "what do people complain
         // about?", which needs catalog-get-product-reviews and the words.
-        reviews: repo.reviewSummary(input.productId),
-        ...(cards ? { cheela: cards } : {}),
+        reviews: reviewStats,
+        ...(cards
+          ? {
+            cheela: {
+              ...cards,
+              // Offered only when there is something to read. A button that
+              // leads to "no reviews yet" spends a turn to say nothing.
+              //
+              // The value names the product rather than saying "this one":
+              // it is submitted as the shopper's next turn and read without
+              // the card beside it, so it has to survive on its own.
+              ...cheelaUiActions(
+                reviewStats.total > 0
+                  ? replyButton(
+                    'What do the reviews say?',
+                    `What do customers say about the ${product.name}?`,
+                    { description: `${reviewStats.total} reviews, averaging ${reviewStats.average}` },
+                  )
+                  : null,
+              ),
+            },
+          }
+          : {}),
       };
     },
   }),
@@ -854,6 +1041,7 @@ export const getProductReviews = defineCapability(
       })),
       returned: z.number().int(),
       hidden: z.number().int().describe('Reviews not returned by this call'),
+      cheela: actionsShape,
     }),
   }),
   createAction({
@@ -868,12 +1056,34 @@ export const getProductReviews = defineCapability(
       }
 
       const limit = input.limit ?? 8;
-      const page = repo.listReviews(input.productId, { limit, sort: input.sort ?? 'recent' });
+      const sort = input.sort ?? 'recent';
+      const page = repo.listReviews(input.productId, { limit, sort });
+      const summary = repo.reviewSummary(input.productId);
+
+      /*
+       * The follow-up worth offering is the opposite of what was just read.
+       * Someone who has seen the recent or the best reviews is one question
+       * away from "but what goes wrong?", and that question is the reason the
+       * `critical` sort exists. Offered only when there are low-star reviews to
+       * find: on a product with none, the button would spend a turn to report
+       * their absence.
+       */
+      const negative = (summary.histogram['1'] ?? 0) + (summary.histogram['2'] ?? 0);
+
+      const actions = cheelaUiActions(
+        sort !== 'critical' && negative > 0
+          ? replyButton(
+            'What are the complaints?',
+            `What are the common complaints in the negative reviews of the ${product.name}?`,
+            { description: `${negative} reviews at one or two stars` },
+          )
+          : null,
+      );
 
       return {
         productId: product.id,
         productName: product.name,
-        summary: repo.reviewSummary(input.productId),
+        summary,
         reviews: page.items.map((r) => ({
           author: r.author,
           rating: r.rating,
@@ -882,6 +1092,7 @@ export const getProductReviews = defineCapability(
         })),
         returned: page.items.length,
         hidden: Math.max(page.total - page.items.length, 0),
+        ...(actions ? { cheela: actions } : {}),
       };
     },
   }),

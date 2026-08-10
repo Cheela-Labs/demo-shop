@@ -15,7 +15,7 @@
     "cheela:status": "cheela status"
   },
   "dependencies": {
-    "@cheela/protocol": "^0.5.0",
+    "@cheela/protocol": "^0.6.0",
     "@cheela/runtime": "^0.7.0",
     "@cheela/sdk": "^0.7.0",
     "cors": "^2.8.5",

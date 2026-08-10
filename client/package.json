@@ -10,7 +10,7 @@
     "cheela:manifest": "cheela manifest pull --runtime ${CHEELA_RUNTIME_ID:?set CHEELA_RUNTIME_ID}"
   },
   "dependencies": {
-    "@cheela/web-component": "^0.5.0",
+    "@cheela/web-component": "^0.6.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.28.0"

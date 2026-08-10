@@ -41,7 +41,7 @@ const PINNED_PX = 32;
 /**
  * Workaround for an upstream bug in @cheela/client.
  *
- * Still required on @cheela/client@0.7.0, which @cheela/web-component@0.5.0
+ * Still required on @cheela/client@0.8.0, which @cheela/web-component@0.6.0
  * pins *exactly* — so dropping @cheela/ui did not drop the bug with it.
  * Re-checked at that version: `createChatController` builds the client itself
  * with `new ExecutionClient({ apiKey, baseUrl, endUserToken })`, and
@@ -169,7 +169,10 @@ function explain(error) {
  *     drop the frame entirely if the picture 404s at render time.
  *   - actions drop any URL that is not `https:`, which is what stops
  *     `javascript:` in a capability's output becoming stored XSS on this
- *     domain, against this shop's own customers.
+ *     domain, against this shop's own customers. Reply actions (protocol 0.6)
+ *     carry no URL at all — their `value` is submitted as the shopper's next
+ *     turn, and it is dropped rather than truncated past 512 characters,
+ *     because half an instruction is a different instruction.
  *
  * Only the composed `renderMessage` is taken, rather than the three separately:
  * `renderCards` is exported from the package's own `core/render`, but 0.5.0
@@ -185,21 +188,30 @@ function explain(error) {
  * moved by the insertion, so a re-run holding the previous ones would blank the
  * message — which is exactly what StrictMode's second pass would do.
  */
-function Bubble({ message }) {
+function Bubble({ message, onReply, busy }) {
   const host = useRef(null);
 
   useEffect(() => {
     const node = host.current;
     if (!node) return;
 
-    const built = renderMessage(message);
+    // `onReply` is not optional in practice, even though the signature allows
+    // it: protocol 0.6 lets a capability return reply buttons, and without a
+    // handler `renderActions` leaves them out of the transcript entirely rather
+    // than drawing something that does nothing. Omitting it would silently
+    // delete a button the runtime asked for.
+    //
+    // `disabled` is honesty rather than correctness — the store already refuses
+    // a second send while one is in flight, but a button that swallows a press
+    // reads as broken.
+    const built = renderMessage(message, { onReply, disabled: busy });
     node.replaceChildren(...(built ? built.childNodes : []));
     // A turn carries messages a shopper has no business seeing — the model's
     // bare tool_call, or a tool_result with nothing renderable in it. They
     // belong in the transcript but have nothing to draw, so the bubble takes
     // itself out rather than leaving an empty box in the log.
     node.hidden = built === null;
-  }, [message]);
+  }, [message, onReply, busy]);
 
   return <div className={`chat-msg chat-msg--${message.role}`} ref={host} />;
 }
@@ -434,7 +446,7 @@ function ShoppingAssistant() {
                 // No id on the wire, and the index is as stable as anything on
                 // offer: within a turn the transcript only grows, and at the end
                 // of one it is replaced wholesale by the server's own copy.
-                <Bubble key={index} message={message} />
+                <Bubble key={index} message={message} onReply={send} busy={busy} />
               ))}
 
               {thinking && (

@@ -7,6 +7,7 @@ import {
   extractActions, isSafeActionUrl, MAX_ACTIONS_PER_RESULT,
   extractPending, isSettled, MIN_POLL_INTERVAL_MS, MAX_POLL_TIMEOUT_MS,
   extractCards, MAX_CARDS_PER_RESULT,
+  MAX_REPLY_VALUE_LENGTH,
 } from '@cheela/protocol';
 import runtime from '../server/.cheela/runtime.ts';
 import * as repo from '../server/src/repo.js';
@@ -157,11 +158,14 @@ check('the picture is marked decorative — the title beside it already names th
 
 // Cards and buttons share one envelope: a shortlist, and a way to see the rest.
 const browseActions = extractActions(browse);
+// Counted as links rather than as actions: protocol 0.6 lets a refinement reply
+// ride in the same envelope, and this assertion is about the one that navigates.
+const browseLinks = browseActions.filter((x) => x.type === 'link');
 check('a "see all" button rides alongside the cards',
-  browseActions.length === (secure ? 1 : 0), JSON.stringify(browseActions));
+  browseLinks.length === (secure ? 1 : 0), JSON.stringify(browseActions));
 if (secure) {
   check('it says how many results there are',
-    browseActions[0].label.includes(String(browse.total)), browseActions[0].label);
+    browseLinks[0].label.includes(String(browse.total)), browseLinks[0].label);
 }
 
 // A budget search cannot be reproduced as a URL — /shop has no price filter —
@@ -200,6 +204,100 @@ check('an unsafe image is dropped and the card survives',
   JSON.stringify(hostile[1]));
 check('a card with no title is dropped — there would be nothing to read',
   hostile.length === 2, JSON.stringify(hostile.map((c) => c.title)));
+
+/*
+ * Reply actions — protocol 0.6.
+ *
+ * The other half of `cheela.actions`: a button that submits a turn instead of
+ * navigating. Everything here goes through `extractActions`, the same function
+ * `renderActions` calls, because the interesting failures are the silent ones —
+ * a reply the widget drops still validates against the capability's own schema
+ * and still looks correct in the runtime's output.
+ */
+console.log(`\n  MAX_REPLY_VALUE_LENGTH = ${MAX_REPLY_VALUE_LENGTH}`);
+
+const detailActions = extractActions(detail);
+const replyOnDetail = detailActions.find((x) => x.type === 'reply');
+
+check('a product with reviews offers a reply button',
+  Boolean(replyOnDetail), JSON.stringify(detailActions.map((x) => x.type)));
+check('its value names the product rather than saying "this one"',
+  replyOnDetail?.value?.includes(detail.product.name), replyOnDetail?.value);
+check('label and value are allowed to differ',
+  replyOnDetail && replyOnDetail.label !== replyOnDetail.value);
+
+const reviewsRecent = await call('catalog-get-product-reviews',
+  { productId: detail.product.id, limit: 3 });
+const reviewsCritical = await call('catalog-get-product-reviews',
+  { productId: detail.product.id, limit: 3, sort: 'critical' });
+
+check('reading reviews offers the opposite sort',
+  extractActions(reviewsRecent).some((x) => x.type === 'reply'));
+check('but not when the critical ones are already on screen',
+  extractActions(reviewsCritical).every((x) => x.type !== 'reply'),
+  JSON.stringify(extractActions(reviewsCritical)));
+
+/*
+ * A refinement's value is submitted with no surrounding context, so it has to
+ * restate the search rather than say "the same, but in stock".
+ */
+const refinable = await call('catalog-search-products',
+  { query: 'backpack', limit: 6, category: 'Bags', maxPriceCents: 900000 });
+const refinement = extractActions(refinable).find((x) => x.type === 'reply');
+
+if (refinement) {
+  check('a refinement restates every filter it was built from',
+    refinement.value.includes('backpack')
+      && refinement.value.includes('Bags')
+      && refinement.value.includes('in stock'),
+    refinement.value);
+  check('a refinement value stays inside the protocol cap',
+    refinement.value.length <= MAX_REPLY_VALUE_LENGTH, String(refinement.value.length));
+} else {
+  check('a refinement restates every filter it was built from', true, 'nothing sold out');
+  check('a refinement value stays inside the protocol cap', true, 'nothing sold out');
+}
+
+const alreadyFiltered = await call('catalog-search-products',
+  { query: 'backpack', limit: 6, inStockOnly: true });
+check('no refinement when the shopper already asked for it',
+  extractActions(alreadyFiltered).every((x) => x.type !== 'reply'));
+
+/*
+ * The widget drops an over-length value rather than truncating it, because half
+ * of "cancel order #1042" is a different instruction. A capability that builds
+ * one gets no button at all, so the runtime must not claim it either.
+ */
+const overlong = extractActions({ cheela: { actions: [
+  { type: 'reply', label: 'Fine', value: 'x'.repeat(MAX_REPLY_VALUE_LENGTH) },
+  { type: 'reply', label: 'Dropped', value: 'x'.repeat(MAX_REPLY_VALUE_LENGTH + 1) },
+  { type: 'reply', label: 'Defaults to its label' },
+  { type: 'reply', value: 'No label' },
+] } });
+check('a reply at exactly the cap survives',
+  overlong.some((x) => x.label === 'Fine'), JSON.stringify(overlong.map((x) => x.label)));
+check('a reply one character over is dropped, not truncated',
+  !overlong.some((x) => x.label === 'Dropped'));
+// Documented behaviour, not an oversight: `value` defaults to `label`, so a
+// button whose text already reads as a sentence needs to say it only once.
+check('a reply with no value falls back to its label',
+  overlong.find((x) => x.label === 'Defaults to its label')?.value === 'Defaults to its label',
+  JSON.stringify(overlong.find((x) => x.label === 'Defaults to its label')));
+check('a reply with no label is dropped',
+  overlong.every((x) => x.label));
+
+/*
+ * A reply carries no URL, so it cannot be a navigation exploit — but it must
+ * not become one by having a url honoured on it either.
+ */
+const mixed = extractActions({ cheela: { actions: [
+  { type: 'reply', label: 'Reply', value: 'ok', url: 'javascript:alert(1)' },
+  { type: 'link', label: 'Unsafe link', url: 'javascript:alert(1)' },
+] } });
+check('an unsafe link is still dropped alongside replies',
+  !mixed.some((x) => x.label === 'Unsafe link'), JSON.stringify(mixed));
+check('a url smuggled onto a reply is not navigable',
+  mixed.every((x) => x.type !== 'reply' || !isSafeActionUrl(x.url ?? '')));
 
 console.log(`\n  rendered button: "${a.label}" -> ${a.url}`);
 console.log(`  polls ${pending?.capability} every ${pending?.intervalMs}ms for up to ${pending?.timeoutMs}ms`);

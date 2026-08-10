@@ -90,7 +90,7 @@ demo@cheela.shop  /  demo-password-1234
 npm run smoke            # 48 — REST API, end to end, against a running server
 npm run smoke:cheela     # 35 — capabilities and the auth boundary, in-process
 npm run smoke:cart       # 13 — the assistant and the browser tab share one cart
-npm run smoke:actions    # 39 — the pay button, the payment poll, product cards
+npm run smoke:actions    # 53 — the pay button, the payment poll, product cards, reply buttons
 npm run smoke:addresses  # 17 — address book, including cross-account isolation
 npm run smoke:sandbox    # 16 — payment pass/fail, no network to Razorpay
 npm run smoke:razorpay   # 20 — signature tampering and webhook settlement
@@ -98,7 +98,7 @@ npm run smoke:reviews    # 42 — CSV parsing, paise conversion, review paging, 
 npm run typecheck        # the .cheela TypeScript
 ```
 
-230 checks. None of them need a Razorpay account or a Cheela API key.
+244 checks. None of them need a Razorpay account or a Cheela API key.
 
 ---
 
@@ -228,6 +228,13 @@ rejected, since these links carry payment sessions.
 ### Nobody buys a bag from a paragraph
 
 The same argument, applied to the things shoppers actually look at before buying them.
+Protocol 0.6 adds a second kind of button: a **reply action** submits text as the shopper's
+next turn instead of navigating. A product lookup offers *"What do the reviews say?"*, reading
+reviews offers *"What are the complaints?"*, and a search offers *"Only what is in stock"* —
+each only when it would actually change the answer. The label and the submitted value are
+separate strings, because the label is read by someone looking at the card and the value is
+read by a model that cannot see it. See INTEGRATION.md §18.
+
 `catalog-search-products` and `catalog-get-product` attach `cheela.cards` (protocol 0.5), so
 the matches arrive as **product cards — picture, name, price, link** — instead of whatever
 prose the model chose to write about them. Prices are formatted by the runtime, which knows

@@ -220,11 +220,11 @@ throws at startup.
 
 | File | Why it exists |
 | --- | --- |
-| **`server/.cheela/capabilities.ts`** (1380 lines) | **The heart of the integration.** All 15 capabilities: zod input/output schemas, descriptions the model reads, `requiresEndUser` on the five order and address capabilities, and handlers that call `repo.js`. Also holds `defineCapability()`, `requireShopper()`, the `cheela.*` envelope builders (§15, §16) and a typed facade over `repo.js` (plain JS) so this file type-checks on its own terms. |
+| **`server/.cheela/capabilities.ts`** (1696 lines) | **The heart of the integration.** All 16 capabilities: zod input/output schemas, descriptions the model reads, `requiresEndUser` on the five order and address capabilities, and handlers that call `repo.js`. Also holds `defineCapability()`, `requireShopper()`, the `cheela.*` envelope builders (§15, §16, §18) and a typed facade over `repo.js` (plain JS) so this file type-checks on its own terms. |
 | **`server/.cheela/runtime.ts`** (25) | Creates the `Runtime`, grants the `cart:write` / `orders:write` permissions, and registers every capability. This is the file the CLI loads to discover what to deploy. |
 | **`server/cheela.config.ts`** (40) | Deploy config: API key (from env), ADP namespace, website metadata, and a conditionally-set endpoint. Scaffolded by `cheela init` — the 0.7 template still omits `provider`/`model`, which live on the dashboard. |
 | **`server/tsconfig.json`** (24) | The `.cheela` files are TypeScript. Node strips types natively at runtime, so this exists purely so the IDE and `npm run typecheck` agree. Needs `allowImportingTsExtensions` because Node requires the real `.ts` extension on imports, and `checkJs: false` so the plain-JS storefront resolves without being type-checked. |
-| **`client/src/components/Assistant.jsx`** (488) | The shopper-facing chat panel, behind a floating launcher. The transcript, composer and status are this project's own React and CSS; the conversation underneath them is `getSession` from `@cheela/web-component/headless`, and message bodies — prose, product cards, action buttons — are built by that package's `renderMessage` — see §14. Passes `endUserToken` as a function so a later sign-in is picked up. Renders **only** if `VITE_CHEELA_PUBLIC_KEY` is set. Replies stream in token by token. |
+| **`client/src/components/Assistant.jsx`** (500) | The shopper-facing chat panel, behind a floating launcher. The transcript, composer and status are this project's own React and CSS; the conversation underneath them is `getSession` from `@cheela/web-component/headless`, and message bodies — prose, product cards, action buttons — are built by that package's `renderMessage` — see §14. Passes `endUserToken` as a function so a later sign-in is picked up. Renders **only** if `VITE_CHEELA_PUBLIC_KEY` is set. Replies stream in token by token. |
 | **`client/public/.well-known/agent-discovery.json`** (2283) | The published manifest, fetched by `cheela manifest pull`. Served as a static asset so external agents can discover the store. Committed, because a static host will not run the CLI. |
 | **`scripts/cheela-smoke.mjs`** (221) | 35-check test driving the capabilities as an agent would, including the auth boundary (no token, bad token, another shopper's order) and the full pay/decline/retry cycle. Runs the runtime in-process — no server, no API key — yet proves every schema, because `execute()` validates both directions. |
 | **`server/src/razorpay.js`** | The gateway: Orders, Payment Links, `fetchPayment`, and the two signature verifications. Talks to Razorpay over `fetch` rather than the SDK so the HMAC arithmetic — the part that decides whether money moved — is visible here rather than buried in a dependency. Also holds sandbox mode. |
@@ -432,7 +432,7 @@ npm run dev                 # storefront: :5173 (UI) + :4000 (API)
 npm run smoke               # 48 — REST API incl. payments (needs the server)
 npm run smoke:cheela        # 35 — capabilities, auth and payment, in-process
 npm run smoke:cart          # 13 — assistant and browser share one cart
-npm run smoke:actions       # 39 — the pay button, the payment poll, product cards
+npm run smoke:actions       # 53 — the pay button, the poll, product cards, reply buttons
 npm run smoke:addresses     # 17 — address book and isolation
 npm run smoke:sandbox       # 16 — payment pass/fail, no network
 npm run smoke:razorpay      # 20 — signatures and webhooks
@@ -1122,3 +1122,96 @@ a stale value.
 The database is still baked into the image on an ephemeral filesystem, so this
 is ~205 MB that ships in the container and resets on every deploy. That was
 already true of the 2.3 MB version; it is merely now large enough to notice.
+
+---
+
+## 18. `type: 'reply'` — buttons that answer instead of navigating
+
+`@cheela/web-component@0.6.0` and `@cheela/protocol@0.6.0` add a second kind of
+action. A link action takes the shopper out of the conversation; a reply action
+keeps them in it — pressing one submits `value` as their next turn.
+
+```ts
+{ type: 'reply', label: 'What do the reviews say?',
+  value: 'What do customers say about the Aurora Over-Ear Headphones?' }
+```
+
+### Label and value are not the same string
+
+They have different audiences. The label is read by someone who can see what it
+sits under; the value is read by a model that cannot. "Yes, cancel it" is clear
+as a button and useless as a turn — `searchRestatement()` exists for exactly
+this reason, and spells out every filter rather than saying "the same, but in
+stock". A model reconstructing the previous query from the transcript is a model
+that can reconstruct it wrong, and the failure would look like the button doing
+something arbitrary.
+
+The value is submitted verbatim and becomes input tokens, which is why the
+protocol caps it at `MAX_REPLY_VALUE_LENGTH` (512) and **drops** anything longer
+rather than truncating: half of an instruction is a different instruction.
+`replyButton()` returns `null` at the same threshold, so the runtime never
+claims a button the widget will silently delete.
+
+### The panel had to opt in
+
+`renderActions` omits reply buttons entirely when no `onReply` is passed —
+rendering them inert would be worse. That makes the handler effectively
+mandatory rather than optional, and upgrading without wiring it would have
+quietly deleted every reply button the runtime produced:
+
+```jsx
+renderMessage(message, { onReply, disabled: busy })
+```
+
+`disabled` is honesty rather than correctness. The store already refuses a
+second send while one is in flight; a control that silently swallows a press
+reads as broken.
+
+Links render as `<a>` and replies as `<button>`, which is the honest mapping —
+one navigates and deserves a context menu and a status-bar preview, the other
+stays on the page and must not pretend otherwise. It also means `styles.css`
+needed three rules it did not before: a `<button>` shrink-wraps and centres its
+text where an `<a>` does not, so a reply button would otherwise sit half-width
+beside a full-width link.
+
+### Where they are offered, and where they are not
+
+| Result | Reply | Condition |
+| --- | --- | --- |
+| `catalog-get-product` | *What do the reviews say?* | Only when the product has reviews |
+| `catalog-get-product-reviews` | *What are the complaints?* | Only when sorted something other than `critical`, and 1–2★ reviews exist |
+| `catalog-search-products` | *Only what is in stock* | Only when the shopper has not already asked, and something is actually out of stock |
+| `checkout-pay-order` | — | Paying is a link. There is nothing to ask. |
+
+Every one of those conditions exists to avoid the same failure: a button that
+spends a turn to report that there was nothing to say. The sold-out count is
+taken across the whole result set rather than the six cards on screen, because
+the refinement filters the search, not the shortlist — counting the shortlist
+would hide the button on most searches, since `featured` ranking already prefers
+stocked products.
+
+Links are ordered before replies. The link is what the shopper asked for; a
+reply button is a suggestion about what to ask next.
+
+### What was deliberately not adopted
+
+0.6.0 also ships `createMessageList`, `createComposer`, `createWaitingNotice`
+and `createErrorBanner` — vanilla implementations of the transcript, input row,
+waiting notice and error banner. This shop keeps its own, for the reasons in
+§14: those four are where the panel stops looking like a chat widget and starts
+looking like this shop, and they carry behaviour the package has no way to know
+about — the stall guard (§12) and the `explain()` mapping that turns a
+`CheelaNetworkError` into a sentence a shopper can act on. Taking them would
+trade all of that for code this repo does not need to own.
+
+The split from §14 is unchanged and still the point: borrow the code where a
+mistake is a security bug, write the code where a mistake is a cosmetic one.
+`renderMessage` is the former. A composer is the latter.
+
+### The `fetchImpl` bug survives another release
+
+Re-checked on `@cheela/client@0.8.0`, which `@cheela/web-component@0.6.0` pins
+exactly. `ExecutionClient` accepts `fetchImpl`, `ControllerConfig` still has no
+field for it, and `createChatController` still constructs the client as
+`new ExecutionClient({ apiKey, baseUrl, endUserToken })`. The workaround at the
+top of `Assistant.jsx` stays.
